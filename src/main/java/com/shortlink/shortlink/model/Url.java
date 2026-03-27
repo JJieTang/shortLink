@@ -38,7 +38,7 @@ public class Url {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    protected Url() {}
+    public Url() {}
 
     @PrePersist
     protected void onCreate() {

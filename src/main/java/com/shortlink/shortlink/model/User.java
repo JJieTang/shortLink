@@ -1,7 +1,6 @@
 package com.shortlink.shortlink.model;
 
 import jakarta.persistence.*;
-import jakarta.persistence.criteria.CriteriaBuilder;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -34,7 +33,7 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    protected User() {}
+    public User() {}
 
     @PrePersist
     protected void onCreate(){

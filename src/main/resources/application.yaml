@@ -3,11 +3,44 @@ spring:
     name: shortlink
   profiles:
     default: dev
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/shortlink}
+    username: ${DB_USERNAME:shortlink}
+    password: ${DB_PASSWORD:shortlink}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
 
   jpa:
     hibernate:
       ddl-auto: validate
     open-in-view: false
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
 app:
   base-url: http://localhost:8080
+  cache:
+    url-ttl: 24h
+  click-stream:
+    stream-key: click-events
+    dlq-stream-key: click-events-dlq
+    consumer-group: click-event-consumers
+    consumer-name: ${CLICK_STREAM_CONSUMER_NAME:${spring.application.name}-consumer}
+    batch-size: 50
+    poll-timeout: 2s
+    max-retries: 3
+  geoip:
+    database-path: ${GEOIP_DB_PATH:}

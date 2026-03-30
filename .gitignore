@@ -31,3 +31,16 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local Maven Cache ###
+.m2-local/
+
+### macOS ###
+.DS_Store
+
+### IntelliJ Build Output ###
+out/
+
+### Local Environment Files ###
+.env
+.env.*

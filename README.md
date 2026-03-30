@@ -16,12 +16,13 @@ Current status: `Phase 1 completed`
 ## Tech Stack
 
 - Java 21
-- Spring Boot
+- Spring Boot 4
 - Spring Web MVC
 - Spring Data JPA
 - PostgreSQL
 - Flyway
 - Maven
+- Testcontainers
 
 ## Core API
 
@@ -82,6 +83,19 @@ Location: https://example.com/landing-page
 - URL validation blocks invalid schemes and private or local addresses
 - A seeded user is used temporarily until authentication is added in Phase 3
 - `open-in-view: false` keeps persistence logic inside service boundaries
+- Structured JSON logging is configured with Logback
+
+## Configuration
+
+Common application settings live in `src/main/resources/application.yaml`.
+
+Development datasource settings live in `src/main/resources/application-dev.yaml` and use environment-variable-first configuration:
+
+- `DB_URL`
+- `DB_USERNAME`
+- `DB_PASSWORD`
+
+If these variables are not provided, local development defaults are used.
 
 ## Testing
 
@@ -93,17 +107,19 @@ Phase 1 test coverage includes:
 - `RedirectService`
 - `UrlController`
 - `RedirectController`
+- `UrlCrudIntegrationTest`
+- `RedirectFlowIntegrationTest`
 
 Result:
 
 ```text
-Tests run: 21, Failures: 0, Errors: 0, Skipped: 0
+Tests run: 25, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
 ## Run Locally
 
-Make sure PostgreSQL is running and matches the datasource settings in `src/main/resources/application.yaml`, then start the app:
+Make sure PostgreSQL is running locally, then start the app:
 
 ```bash
 ./mvnw spring-boot:run
@@ -112,8 +128,10 @@ Make sure PostgreSQL is running and matches the datasource settings in `src/main
 Run tests with:
 
 ```bash
-./mvnw -Dmaven.repo.local=.m2-local/repository test
+./mvnw -U test
 ```
+
+Integration tests use Testcontainers with PostgreSQL, so Docker must be running before executing the full test suite.
 
 ## Next
 

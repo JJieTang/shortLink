@@ -13,21 +13,36 @@ import java.time.Instant;
 public class RedirectService {
 
     private final UrlRepository urlRepository;
+    private final UrlCacheService urlCacheService;
 
-    public RedirectService(UrlRepository urlRepository) {
+    public RedirectService(UrlRepository urlRepository, UrlCacheService urlCacheService) {
         this.urlRepository = urlRepository;
+        this.urlCacheService = urlCacheService;
     }
 
     @Transactional(readOnly = true)
     public String resolveOriginalUrl (String shortCode) {
+        UrlCacheService.CachedUrl cachedUrl = urlCacheService.findByShortCode(shortCode)
+                .orElse(null);
+
+        if (cachedUrl != null) {
+            validateNotExpired(shortCode, cachedUrl.expiresAt());
+            return cachedUrl.originalUrl();
+        }
+
         Url url = urlRepository.findByShortCodeAndIsActiveTrue(shortCode).orElseThrow(
                 () -> new ResourceNotFoundException("Short code not found: " + shortCode)
         );
 
-        if (url.getExpiresAt() != null && !url.getExpiresAt().isAfter(Instant.now())) {
-            throw new ExpiredShortCodeException(shortCode);
-        }
+        validateNotExpired(shortCode, url.getExpiresAt());
+        urlCacheService.cacheUrl(url);
 
         return url.getOriginalUrl();
+    }
+
+    private void validateNotExpired(String shortCode, Instant expiresAt) {
+        if (expiresAt != null && !expiresAt.isAfter(Instant.now())) {
+            throw new ExpiredShortCodeException(shortCode);
+        }
     }
 }

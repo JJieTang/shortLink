@@ -5,6 +5,10 @@ import com.shortlink.shortlink.dto.UrlResponse;
 import com.shortlink.shortlink.model.Url;
 import com.shortlink.shortlink.service.UrlShorteningService;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -35,5 +39,17 @@ public class UrlController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteUrl(@PathVariable String shortCode) {
         urlShorteningService.deleteUrl(shortCode);
+    }
+
+    @GetMapping
+    public Page<UrlResponse> listUrls(
+            @PageableDefault(
+                    size = 20,
+                    sort = "createdAt",
+                    direction = Sort.Direction.DESC
+            ) Pageable pageable
+            ) {
+        return urlShorteningService.listUrls(pageable)
+                .map(url -> UrlResponse.from(url, urlShorteningService.getBaseUrl()));
     }
 }

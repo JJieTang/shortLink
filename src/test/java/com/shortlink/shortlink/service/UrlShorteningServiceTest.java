@@ -14,8 +14,12 @@ import com.shortlink.shortlink.util.ReservedWords;
 import com.shortlink.shortlink.util.UrlValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -121,5 +125,24 @@ class UrlShorteningServiceTest {
         urlShorteningService.deleteUrl("abc1234");
 
         assertFalse(url.getActive());
+    }
+
+    @Test
+    void shouldListUrlsForSeedUser() {
+        Url first = new Url();
+        first.setShortCode("abc1234");
+        Url second = new Url();
+        second.setShortCode("def5678");
+
+        PageRequest pageable = PageRequest.of(0, 2);
+        Page<Url> page = new PageImpl<>(List.of(first, second), pageable, 2);
+        when(urlRepository.findByUser_IdAndIsActiveTrue(UrlShorteningService.SEED_USER_ID, pageable)).thenReturn(page);
+
+        Page<Url> result = urlShorteningService.listUrls(pageable);
+
+        assertEquals(2, result.getContent().size());
+        assertEquals("abc1234", result.getContent().get(0).getShortCode());
+        assertEquals("def5678", result.getContent().get(1).getShortCode());
+        verify(urlRepository).findByUser_IdAndIsActiveTrue(UrlShorteningService.SEED_USER_ID, pageable);
     }
 }

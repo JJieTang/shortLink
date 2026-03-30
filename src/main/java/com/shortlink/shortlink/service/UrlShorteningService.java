@@ -15,6 +15,8 @@ import com.shortlink.shortlink.exception.InvalidAliasException;
 import com.shortlink.shortlink.exception.ShortCodeGenerationException;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -81,6 +83,11 @@ public class UrlShorteningService {
     public void deleteUrl (String shortCode) {
         Url url = getUrl(shortCode);
         url.setActive(false);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Url> listUrls(Pageable pageable) {
+        return urlRepository.findByUser_IdAndIsActiveTrue(SEED_USER_ID, pageable);
     }
 
     public String getBaseUrl(){

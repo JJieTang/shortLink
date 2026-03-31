@@ -5,17 +5,20 @@ import com.shortlink.shortlink.exception.ResourceNotFoundException;
 import com.shortlink.shortlink.model.ClickEvent;
 import com.shortlink.shortlink.model.Url;
 import com.shortlink.shortlink.repository.ClickEventRepository;
+import com.shortlink.shortlink.repository.UrlDailyStatRepository;
 import com.shortlink.shortlink.repository.UrlRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -24,6 +27,7 @@ import static org.mockito.Mockito.when;
 class ClickEventConsumerTest {
 
     private ClickEventRepository clickEventRepository;
+    private UrlDailyStatRepository urlDailyStatRepository;
     private UrlRepository urlRepository;
     private UserAgentParser userAgentParser;
     private GeoLookupService geoLookupService;
@@ -32,12 +36,14 @@ class ClickEventConsumerTest {
     @BeforeEach
     void setUp() {
         clickEventRepository = mock(ClickEventRepository.class);
+        urlDailyStatRepository = mock(UrlDailyStatRepository.class);
         urlRepository = mock(UrlRepository.class);
         userAgentParser = mock(UserAgentParser.class);
         geoLookupService = mock(GeoLookupService.class);
 
         clickEventConsumer = new ClickEventConsumer(
                 clickEventRepository,
+                urlDailyStatRepository,
                 urlRepository,
                 userAgentParser,
                 geoLookupService
@@ -53,10 +59,12 @@ class ClickEventConsumerTest {
 
         verify(urlRepository, never()).findById(any());
         verify(clickEventRepository, never()).save(any());
+        verify(urlDailyStatRepository, never()).upsertDailyCounts(any(), any(), any(Long.class), any(Long.class));
+        verify(urlRepository, never()).incrementTotalClicks(any(), any(Long.class));
     }
 
     @Test
-    void shouldEnrichAndSaveClickEvent() {
+    void shouldEnrichSaveAndIncrementUniqueCountForFirstIpOfDay() {
         ClickEventMessage eventMessage = sampleEventMessage();
         Url url = new Url();
         url.setId(eventMessage.urlId());
@@ -64,6 +72,12 @@ class ClickEventConsumerTest {
 
         when(clickEventRepository.existsByEventId(eventMessage.eventId())).thenReturn(false);
         when(urlRepository.findById(eventMessage.urlId())).thenReturn(Optional.of(url));
+        when(clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
+                eq(eventMessage.urlId()),
+                eq(eventMessage.ipAddress()),
+                eq(Instant.parse("2026-03-31T00:00:00Z")),
+                eq(Instant.parse("2026-04-01T00:00:00Z"))
+        )).thenReturn(false);
         when(userAgentParser.parse(eventMessage.userAgent())).thenReturn(
                 new UserAgentParser.ParsedUserAgent("desktop", "Mac OS X", "Chrome")
         );
@@ -89,6 +103,44 @@ class ClickEventConsumerTest {
                         && "Mozilla/5.0".equals(clickEvent.getUserAgent())
                         && "trace-123".equals(clickEvent.getTraceId())
         ));
+        verify(urlDailyStatRepository).upsertDailyCounts(
+                eventMessage.urlId(),
+                LocalDate.of(2026, 3, 31),
+                1,
+                1
+        );
+        verify(urlRepository).incrementTotalClicks(eventMessage.urlId(), 1);
+    }
+
+    @Test
+    void shouldNotIncrementUniqueCountWhenIpAlreadySeenThatDay() {
+        ClickEventMessage eventMessage = sampleEventMessage();
+        Url url = new Url();
+        url.setId(eventMessage.urlId());
+
+        when(clickEventRepository.existsByEventId(eventMessage.eventId())).thenReturn(false);
+        when(urlRepository.findById(eventMessage.urlId())).thenReturn(Optional.of(url));
+        when(clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
+                eq(eventMessage.urlId()),
+                eq(eventMessage.ipAddress()),
+                eq(Instant.parse("2026-03-31T00:00:00Z")),
+                eq(Instant.parse("2026-04-01T00:00:00Z"))
+        )).thenReturn(true);
+        when(userAgentParser.parse(eventMessage.userAgent())).thenReturn(
+                new UserAgentParser.ParsedUserAgent("desktop", "Mac OS X", "Chrome")
+        );
+        when(geoLookupService.lookup(eventMessage.ipAddress())).thenReturn(
+                new GeoLookupService.GeoLocation("CH", "Zurich")
+        );
+
+        clickEventConsumer.consume(eventMessage);
+
+        verify(urlDailyStatRepository).upsertDailyCounts(
+                eventMessage.urlId(),
+                LocalDate.of(2026, 3, 31),
+                1,
+                0
+        );
     }
 
     @Test
@@ -100,6 +152,8 @@ class ClickEventConsumerTest {
 
         assertThrows(ResourceNotFoundException.class, () -> clickEventConsumer.consume(eventMessage));
         verify(clickEventRepository, never()).save(any());
+        verify(urlDailyStatRepository, never()).upsertDailyCounts(any(), any(), any(Long.class), any(Long.class));
+        verify(urlRepository, never()).incrementTotalClicks(any(), any(Long.class));
     }
 
     private ClickEventMessage sampleEventMessage() {

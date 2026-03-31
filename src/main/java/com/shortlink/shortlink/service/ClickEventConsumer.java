@@ -5,24 +5,32 @@ import com.shortlink.shortlink.exception.ResourceNotFoundException;
 import com.shortlink.shortlink.model.ClickEvent;
 import com.shortlink.shortlink.model.Url;
 import com.shortlink.shortlink.repository.ClickEventRepository;
+import com.shortlink.shortlink.repository.UrlDailyStatRepository;
 import com.shortlink.shortlink.repository.UrlRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 
 @Service
 public class ClickEventConsumer {
 
     private final ClickEventRepository clickEventRepository;
+    private final UrlDailyStatRepository urlDailyStatRepository;
     private final UrlRepository urlRepository;
     private final UserAgentParser userAgentParser;
     private final GeoLookupService geoLookupService;
 
     public ClickEventConsumer(
             ClickEventRepository clickEventRepository,
+            UrlDailyStatRepository urlDailyStatRepository,
             UrlRepository urlRepository,
             UserAgentParser userAgentParser,
             GeoLookupService geoLookupService) {
         this.clickEventRepository = clickEventRepository;
+        this.urlDailyStatRepository = urlDailyStatRepository;
         this.urlRepository = urlRepository;
         this.userAgentParser = userAgentParser;
         this.geoLookupService = geoLookupService;
@@ -34,6 +42,7 @@ public class ClickEventConsumer {
             return;
         }
 
+        LocalDate statDate = resolveStatDate(eventMessage);
         Url url = urlRepository.findById(eventMessage.urlId()).orElseThrow(
                 () -> new ResourceNotFoundException("URL not found for click event: " + eventMessage.urlId())
         );
@@ -56,5 +65,33 @@ public class ClickEventConsumer {
         clickEvent.setTraceId(eventMessage.traceId());
 
         clickEventRepository.save(clickEvent);
+        urlDailyStatRepository.upsertDailyCounts(
+                eventMessage.urlId(),
+                statDate,
+                1,
+                resolveUniqueIncrement(eventMessage, statDate)
+        );
+        urlRepository.incrementTotalClicks(eventMessage.urlId(), 1);
+    }
+
+    private LocalDate resolveStatDate(ClickEventMessage eventMessage) {
+        return LocalDate.ofInstant(eventMessage.clickedAt(), ZoneOffset.UTC);
+    }
+
+    private long resolveUniqueIncrement(ClickEventMessage eventMessage, LocalDate statDate) {
+        String ipAddress = eventMessage.ipAddress();
+        if (ipAddress == null || ipAddress.isBlank()) {
+            return 0;
+        }
+
+        Instant startInclusive = statDate.atStartOfDay().toInstant(ZoneOffset.UTC);
+        Instant endExclusive = statDate.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+
+        return clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
+                eventMessage.urlId(),
+                ipAddress,
+                startInclusive,
+                endExclusive
+        ) ? 0 : 1;
     }
 }

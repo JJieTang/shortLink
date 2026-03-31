@@ -35,6 +35,7 @@ public class UrlShorteningService {
     private final UserRepository userRepository;
     private final UrlValidator urlValidator;
     private final ReservedWords reservedWords;
+    private final UrlCacheService urlCacheService;
     private final String baseUrl;
 
     public UrlShorteningService(
@@ -43,12 +44,14 @@ public class UrlShorteningService {
             UserRepository userRepository,
             UrlValidator urlValidator,
             ReservedWords reservedWords,
+            UrlCacheService urlCacheService,
             @Value("${app.base-url:http://localhost:8080}") String baseUrl) {
         this.base62Encoder = base62Encoder;
         this.urlRepository = urlRepository;
         this.userRepository = userRepository;
         this.urlValidator = urlValidator;
         this.reservedWords = reservedWords;
+        this.urlCacheService = urlCacheService;
         this.baseUrl = baseUrl;
     }
 
@@ -70,7 +73,9 @@ public class UrlShorteningService {
         url.setTotalClicks(0L);
         url.setActive(true);
 
-        return urlRepository.save(url);
+        Url savedUrl = urlRepository.save(url);
+        urlCacheService.cacheUrl(savedUrl);
+        return savedUrl;
     }
 
     @Transactional(readOnly = true)
@@ -83,6 +88,7 @@ public class UrlShorteningService {
     public void deleteUrl (String shortCode) {
         Url url = getUrl(shortCode);
         url.setActive(false);
+        urlCacheService.evict(shortCode);
     }
 
     @Transactional(readOnly = true)

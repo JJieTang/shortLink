@@ -37,6 +37,7 @@ class UrlShorteningServiceTest {
     private Base62Encoder base62Encoder;
     private UrlRepository urlRepository;
     private UserRepository userRepository;
+    private UrlCacheService urlCacheService;
     private UrlShorteningService urlShorteningService;
 
     @BeforeEach
@@ -44,12 +45,14 @@ class UrlShorteningServiceTest {
         base62Encoder = mock(Base62Encoder.class);
         urlRepository = mock(UrlRepository.class);
         userRepository = mock(UserRepository.class);
+        urlCacheService = mock(UrlCacheService.class);
         urlShorteningService = new UrlShorteningService(
                 base62Encoder,
                 urlRepository,
                 userRepository,
                 new UrlValidator(),
                 new ReservedWords(),
+                urlCacheService,
                 "http://localhost:8080"
         );
     }
@@ -73,6 +76,7 @@ class UrlShorteningServiceTest {
         assertSame(user, created.getUser());
         assertEquals(0L, created.getTotalClicks());
         verify(urlRepository).save(any(Url.class));
+        verify(urlCacheService).cacheUrl(created);
     }
 
     @Test
@@ -125,6 +129,7 @@ class UrlShorteningServiceTest {
         urlShorteningService.deleteUrl("abc1234");
 
         assertFalse(url.getActive());
+        verify(urlCacheService).evict("abc1234");
     }
 
     @Test

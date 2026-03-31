@@ -43,6 +43,7 @@ public class ClickEventConsumer {
         }
 
         LocalDate statDate = resolveStatDate(eventMessage);
+        long uniqueIncrement = resolveUniqueIncrement(eventMessage, statDate);
         Url url = urlRepository.findById(eventMessage.urlId()).orElseThrow(
                 () -> new ResourceNotFoundException("URL not found for click event: " + eventMessage.urlId())
         );
@@ -69,7 +70,7 @@ public class ClickEventConsumer {
                 eventMessage.urlId(),
                 statDate,
                 1,
-                resolveUniqueIncrement(eventMessage, statDate)
+                uniqueIncrement
         );
         urlRepository.incrementTotalClicks(eventMessage.urlId(), 1);
     }

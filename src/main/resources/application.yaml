@@ -11,7 +11,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      timeout: 2s
+      timeout: 5s
 
   jpa:
     hibernate:

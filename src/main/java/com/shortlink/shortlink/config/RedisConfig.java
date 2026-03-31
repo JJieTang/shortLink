@@ -2,6 +2,7 @@ package com.shortlink.shortlink.config;
 
 import com.shortlink.shortlink.event.ClickEventMessage;
 import com.shortlink.shortlink.service.ClickEventConsumer;
+import com.shortlink.shortlink.service.ClickEventDlqHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,6 +21,7 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -51,18 +53,22 @@ public class RedisConfig {
             StringRedisTemplate stringRedisTemplate,
             StreamMessageListenerContainer<String, MapRecord<String, String, String>> clickEventListenerContainer,
             ClickEventConsumer clickEventConsumer,
+            ClickEventDlqHandler clickEventDlqHandler,
             @Value("${app.click-stream.stream-key}") String streamKey,
             @Value("${app.click-stream.consumer-group}") String consumerGroup,
-            @Value("${app.click-stream.consumer-name}") String consumerName) {
+            @Value("${app.click-stream.consumer-name}") String consumerName,
+            @Value("${app.click-stream.max-retries}") int maxRetries) {
         return args -> {
             initializeConsumerGroup(connectionFactory, streamKey, consumerGroup);
             registerAndStartListener(
                     stringRedisTemplate,
                     clickEventListenerContainer,
                     clickEventConsumer,
+                    clickEventDlqHandler,
                     streamKey,
                     consumerGroup,
-                    consumerName
+                    consumerName,
+                    maxRetries
             );
         };
     }
@@ -100,9 +106,11 @@ public class RedisConfig {
             StringRedisTemplate stringRedisTemplate,
             StreamMessageListenerContainer<String, MapRecord<String, String, String>> listenerContainer,
             ClickEventConsumer clickEventConsumer,
+            ClickEventDlqHandler clickEventDlqHandler,
             String streamKey,
             String consumerGroup,
-            String consumerName) {
+            String consumerName,
+            int maxRetries) {
         try {
             listenerContainer.receive(
                     Consumer.from(consumerGroup, consumerName),
@@ -112,7 +120,15 @@ public class RedisConfig {
                             clickEventConsumer.consume(toClickEventMessage(message.getValue()));
                             stringRedisTemplate.opsForStream().acknowledge(streamKey, consumerGroup, message.getId());
                         } catch (Exception exception) {
-                            log.warn("Failed to consume click event {} from stream '{}'", message.getId(), streamKey, exception);
+                            handleFailedMessage(
+                                    stringRedisTemplate,
+                                    clickEventDlqHandler,
+                                    streamKey,
+                                    consumerGroup,
+                                    message,
+                                    exception,
+                                    maxRetries
+                            );
                         }
                     }
             );
@@ -125,6 +141,75 @@ public class RedisConfig {
             );
         } catch (Exception exception) {
             log.warn("Skipping Redis stream listener startup for stream '{}'", streamKey, exception);
+        }
+    }
+
+    private void handleFailedMessage(
+            StringRedisTemplate stringRedisTemplate,
+            ClickEventDlqHandler clickEventDlqHandler,
+            String streamKey,
+            String consumerGroup,
+            MapRecord<String, String, String> message,
+            Exception exception,
+            int maxRetries) {
+        int retryCount = readRetryCount(message.getValue());
+
+        try {
+            if (retryCount < maxRetries) {
+                requeueWithIncrementedRetry(stringRedisTemplate, streamKey, message, retryCount + 1);
+                stringRedisTemplate.opsForStream().acknowledge(streamKey, consumerGroup, message.getId());
+                log.warn(
+                        "Retrying click event {} from stream '{}' ({}/{})",
+                        message.getId(),
+                        streamKey,
+                        retryCount + 1,
+                        maxRetries,
+                        exception
+                );
+                return;
+            }
+
+            clickEventDlqHandler.moveToDlq(message, exception);
+            stringRedisTemplate.opsForStream().acknowledge(streamKey, consumerGroup, message.getId());
+            log.warn(
+                    "Moved failed click event {} from stream '{}' to DLQ after {} retries",
+                    message.getId(),
+                    streamKey,
+                    retryCount,
+                    exception
+            );
+        } catch (Exception dlqException) {
+            log.error(
+                    "Failed to handle click event {} from stream '{}' after consumer error",
+                    message.getId(),
+                    streamKey,
+                    dlqException
+            );
+        }
+    }
+
+    private void requeueWithIncrementedRetry(
+            StringRedisTemplate stringRedisTemplate,
+            String streamKey,
+            MapRecord<String, String, String> message,
+            int nextRetryCount) {
+        Map<String, String> payload = new LinkedHashMap<>(message.getValue());
+        payload.put("retryCount", String.valueOf(nextRetryCount));
+        payload.put("lastRetriedAt", Instant.now().toString());
+        stringRedisTemplate.opsForStream().add(streamKey, payload);
+    }
+
+    private int readRetryCount(Map<String, String> payload) {
+        String rawRetryCount = payload.get("retryCount");
+        if (rawRetryCount == null || rawRetryCount.isBlank()) {
+            return 0;
+        }
+
+        try {
+            return Integer.parseInt(rawRetryCount);
+        } catch (NumberFormatException exception) {
+            log.warn("Invalid retryCount '{}' found in click-event payload, falling back to 0", rawRetryCount);
+            return 0;
         }
     }
 

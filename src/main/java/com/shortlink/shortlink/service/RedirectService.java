@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.UUID;
 
 @Service
 public class RedirectService {
@@ -22,12 +23,17 @@ public class RedirectService {
 
     @Transactional(readOnly = true)
     public String resolveOriginalUrl (String shortCode) {
+        return resolveRedirectTarget(shortCode).originalUrl();
+    }
+
+    @Transactional(readOnly = true)
+    public RedirectTarget resolveRedirectTarget(String shortCode) {
         UrlCacheService.CachedUrl cachedUrl = urlCacheService.findByShortCode(shortCode)
                 .orElse(null);
 
         if (cachedUrl != null) {
             validateNotExpired(shortCode, cachedUrl.expiresAt());
-            return cachedUrl.originalUrl();
+            return new RedirectTarget(cachedUrl.urlId(), shortCode, cachedUrl.originalUrl());
         }
 
         Url url = urlRepository.findByShortCodeAndIsActiveTrue(shortCode).orElseThrow(
@@ -37,12 +43,15 @@ public class RedirectService {
         validateNotExpired(shortCode, url.getExpiresAt());
         urlCacheService.cacheUrl(url);
 
-        return url.getOriginalUrl();
+        return new RedirectTarget(url.getId(), url.getShortCode(), url.getOriginalUrl());
     }
 
     private void validateNotExpired(String shortCode, Instant expiresAt) {
         if (expiresAt != null && !expiresAt.isAfter(Instant.now())) {
             throw new ExpiredShortCodeException(shortCode);
         }
+    }
+
+    public record RedirectTarget(UUID urlId, String shortCode, String originalUrl) {
     }
 }

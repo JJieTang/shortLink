@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -33,7 +34,11 @@ class RedirectServiceTest {
     @Test
     void shouldResolveOriginalUrlFromCache() {
         when(urlCacheService.findByShortCode("abc1234")).thenReturn(Optional.of(
-                new UrlCacheService.CachedUrl("https://example.com/landing", Instant.now().plusSeconds(300))
+                new UrlCacheService.CachedUrl(
+                        UUID.fromString("550e8400-e29b-41d4-a716-446655440000"),
+                        "https://example.com/landing",
+                        Instant.now().plusSeconds(300)
+                )
         ));
 
         String originalUrl = redirectService.resolveOriginalUrl("abc1234");
@@ -69,7 +74,11 @@ class RedirectServiceTest {
     @Test
     void shouldThrowWhenCachedShortCodeExpired() {
         when(urlCacheService.findByShortCode("expired1")).thenReturn(Optional.of(
-                new UrlCacheService.CachedUrl("https://example.com/landing", Instant.now().minusSeconds(60))
+                new UrlCacheService.CachedUrl(
+                        UUID.fromString("550e8400-e29b-41d4-a716-446655440000"),
+                        "https://example.com/landing",
+                        Instant.now().minusSeconds(60)
+                )
         ));
 
         assertThrows(ExpiredShortCodeException.class, () -> redirectService.resolveOriginalUrl("expired1"));

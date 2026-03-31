@@ -10,11 +10,13 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class UrlCacheService {
 
     private static final String KEY_PREFIX = "url:";
+    private static final String URL_ID_FIELD = "urlId";
     private static final String ORIGINAL_URL_FIELD = "originalUrl";
     private static final String EXPIRES_AT_FIELD = "expiresAt";
 
@@ -34,13 +36,19 @@ public class UrlCacheService {
             return Optional.empty();
         }
 
+        Object urlId = entries.get(URL_ID_FIELD);
         Object originalUrl = entries.get(ORIGINAL_URL_FIELD);
+        if (!(urlId instanceof String urlIdValue) || urlIdValue.isBlank()) {
+            return Optional.empty();
+        }
+
         if (!(originalUrl instanceof String originalUrlValue) || originalUrlValue.isBlank()) {
             return Optional.empty();
         }
 
         Object expiresAt = entries.get(EXPIRES_AT_FIELD);
         return Optional.of(new CachedUrl(
+                UUID.fromString(urlIdValue),
                 originalUrlValue,
                 expiresAt instanceof String expiresAtValue && !expiresAtValue.isBlank()
                         ? Instant.parse(expiresAtValue)
@@ -50,6 +58,7 @@ public class UrlCacheService {
 
     public void cacheUrl(Url url) {
         Map<String, String> values = new LinkedHashMap<>();
+        values.put(URL_ID_FIELD, url.getId().toString());
         values.put(ORIGINAL_URL_FIELD, url.getOriginalUrl());
 
         if (url.getExpiresAt() != null) {
@@ -69,6 +78,6 @@ public class UrlCacheService {
         return KEY_PREFIX + shortCode;
     }
 
-    public record CachedUrl(String originalUrl, Instant expiresAt) {
+    public record CachedUrl(UUID urlId, String originalUrl, Instant expiresAt) {
     }
 }

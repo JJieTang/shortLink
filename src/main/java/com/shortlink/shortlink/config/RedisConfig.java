@@ -21,6 +21,7 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -119,8 +120,13 @@ public class RedisConfig {
                     StreamOffset.create(streamKey, ReadOffset.lastConsumed()),
                     message -> {
                         try {
-                            clickEventConsumer.consume(toClickEventMessage(message.getValue()));
-                            stringRedisTemplate.opsForStream().acknowledge(streamKey, consumerGroup, message.getId());
+                            processMessageBatch(
+                                    stringRedisTemplate,
+                                    clickEventConsumer,
+                                    streamKey,
+                                    consumerGroup,
+                                    List.of(message)
+                            );
                         } catch (Exception exception) {
                             handleFailedMessage(
                                     stringRedisTemplate,
@@ -143,6 +149,26 @@ public class RedisConfig {
             );
         } catch (Exception exception) {
             log.warn("Skipping Redis stream listener startup for stream '{}'", streamKey, exception);
+        }
+    }
+
+    private void processMessageBatch(
+            StringRedisTemplate stringRedisTemplate,
+            ClickEventConsumer clickEventConsumer,
+            String streamKey,
+            String consumerGroup,
+            List<MapRecord<String, String, String>> messages) {
+        if (messages.isEmpty()) {
+            return;
+        }
+
+        List<ClickEventMessage> eventMessages = messages.stream()
+                .map(message -> toClickEventMessage(message.getValue()))
+                .toList();
+
+        clickEventConsumer.consumeBatch(eventMessages);
+        for (MapRecord<String, String, String> message : messages) {
+            stringRedisTemplate.opsForStream().acknowledge(streamKey, consumerGroup, message.getId());
         }
     }
 

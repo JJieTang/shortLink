@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 
 @Service
 public class ClickEventConsumer {
@@ -38,6 +39,17 @@ public class ClickEventConsumer {
 
     @Transactional
     public void consume(ClickEventMessage eventMessage) {
+        consumeBatch(List.of(eventMessage));
+    }
+
+    @Transactional
+    public void consumeBatch(List<ClickEventMessage> eventMessages) {
+        for (ClickEventMessage eventMessage : eventMessages) {
+            consumeSingle(eventMessage);
+        }
+    }
+
+    private void consumeSingle(ClickEventMessage eventMessage) {
         if (clickEventRepository.existsByEventId(eventMessage.eventId())) {
             return;
         }

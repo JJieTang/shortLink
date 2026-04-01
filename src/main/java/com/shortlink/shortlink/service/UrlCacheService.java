@@ -3,6 +3,8 @@ package com.shortlink.shortlink.service;
 import com.shortlink.shortlink.model.Url;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -17,6 +19,7 @@ import java.util.UUID;
 @Service
 public class UrlCacheService {
 
+    private static final Logger log = LoggerFactory.getLogger(UrlCacheService.class);
     private static final String KEY_PREFIX = "url:";
     private static final String URL_ID_FIELD = "urlId";
     private static final String ORIGINAL_URL_FIELD = "originalUrl";
@@ -42,7 +45,14 @@ public class UrlCacheService {
     }
 
     public Optional<CachedUrl> findByShortCode(String shortCode) {
-        Map<Object, Object> entries = stringRedisTemplate.opsForHash().entries(buildKey(shortCode));
+        Map<Object, Object> entries;
+        try {
+            entries = stringRedisTemplate.opsForHash().entries(buildKey(shortCode));
+        } catch (Exception exception) {
+            cacheMissesCounter.increment();
+            log.warn("Failed to read URL cache for shortCode {}. Falling back to database.", shortCode, exception);
+            return Optional.empty();
+        }
         if (entries.isEmpty()) {
             cacheMissesCounter.increment();
             return Optional.empty();
@@ -81,12 +91,20 @@ public class UrlCacheService {
         }
 
         String key = buildKey(url.getShortCode());
-        stringRedisTemplate.opsForHash().putAll(key, values);
-        stringRedisTemplate.expire(key, urlTtl);
+        try {
+            stringRedisTemplate.opsForHash().putAll(key, values);
+            stringRedisTemplate.expire(key, urlTtl);
+        } catch (Exception exception) {
+            log.warn("Failed to write URL cache for shortCode {}. Continuing without cache.", url.getShortCode(), exception);
+        }
     }
 
     public void evict(String shortCode) {
-        stringRedisTemplate.delete(buildKey(shortCode));
+        try {
+            stringRedisTemplate.delete(buildKey(shortCode));
+        } catch (Exception exception) {
+            log.warn("Failed to evict URL cache for shortCode {}. Continuing without cache eviction.", shortCode, exception);
+        }
     }
 
     private String buildKey(String shortCode) {

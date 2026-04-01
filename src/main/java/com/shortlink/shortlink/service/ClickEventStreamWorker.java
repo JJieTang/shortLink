@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.ReadOffset;
+import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.connection.stream.StreamReadOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -108,9 +109,7 @@ public class ClickEventStreamWorker {
                 .toList();
 
         clickEventConsumer.consumeBatch(eventMessages);
-        for (MapRecord<String, Object, Object> message : messages) {
-            stringRedisTemplate.opsForStream().acknowledge(streamKey, consumerGroup, message.getId());
-        }
+        acknowledgeBatch(messages);
     }
 
     private void pollLoop() {
@@ -225,6 +224,13 @@ public class ClickEventStreamWorker {
             log.warn("Invalid retryCount '{}' found in click-event payload, falling back to 0", rawRetryCount);
             return 0;
         }
+    }
+
+    private void acknowledgeBatch(List<MapRecord<String, Object, Object>> messages) {
+        RecordId[] recordIds = messages.stream()
+                .map(MapRecord::getId)
+                .toArray(RecordId[]::new);
+        stringRedisTemplate.opsForStream().acknowledge(streamKey, consumerGroup, recordIds);
     }
 
     private ClickEventMessage toClickEventMessage(Map<Object, Object> payload) {

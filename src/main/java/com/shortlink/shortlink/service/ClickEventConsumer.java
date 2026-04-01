@@ -13,7 +13,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class ClickEventConsumer {
@@ -44,21 +50,33 @@ public class ClickEventConsumer {
 
     @Transactional
     public void consumeBatch(List<ClickEventMessage> eventMessages) {
-        for (ClickEventMessage eventMessage : eventMessages) {
-            consumeSingle(eventMessage);
-        }
-    }
-
-    private void consumeSingle(ClickEventMessage eventMessage) {
-        if (clickEventRepository.existsByEventId(eventMessage.eventId())) {
+        if (eventMessages.isEmpty()) {
             return;
         }
 
+        List<ClickEventMessage> uniqueMessages = deduplicateBatch(eventMessages);
+        Set<UUID> existingEventIds = findExistingEventIds(uniqueMessages);
+        List<ClickEventMessage> pendingMessages = uniqueMessages.stream()
+                .filter(eventMessage -> !existingEventIds.contains(eventMessage.eventId()))
+                .toList();
+
+        if (pendingMessages.isEmpty()) {
+            return;
+        }
+
+        Map<UUID, Url> urlsById = findUrlsById(pendingMessages);
+        for (ClickEventMessage eventMessage : pendingMessages) {
+            consumeSingle(eventMessage, urlsById);
+        }
+    }
+
+    private void consumeSingle(ClickEventMessage eventMessage, Map<UUID, Url> urlsById) {
         LocalDate statDate = resolveStatDate(eventMessage);
         long uniqueIncrement = resolveUniqueIncrement(eventMessage, statDate);
-        Url url = urlRepository.findById(eventMessage.urlId()).orElseThrow(
-                () -> new ResourceNotFoundException("URL not found for click event: " + eventMessage.urlId())
-        );
+        Url url = urlsById.get(eventMessage.urlId());
+        if (url == null) {
+            throw new ResourceNotFoundException("URL not found for click event: " + eventMessage.urlId());
+        }
 
         UserAgentParser.ParsedUserAgent parsedUserAgent = userAgentParser.parse(eventMessage.userAgent());
         GeoLookupService.GeoLocation geoLocation = geoLookupService.lookup(eventMessage.ipAddress());
@@ -85,6 +103,31 @@ public class ClickEventConsumer {
                 uniqueIncrement
         );
         urlRepository.incrementTotalClicks(eventMessage.urlId(), 1);
+    }
+
+    private List<ClickEventMessage> deduplicateBatch(List<ClickEventMessage> eventMessages) {
+        Map<UUID, ClickEventMessage> uniqueMessages = new LinkedHashMap<>();
+        for (ClickEventMessage eventMessage : eventMessages) {
+            uniqueMessages.putIfAbsent(eventMessage.eventId(), eventMessage);
+        }
+        return List.copyOf(uniqueMessages.values());
+    }
+
+    private Set<UUID> findExistingEventIds(Collection<ClickEventMessage> eventMessages) {
+        List<UUID> eventIds = eventMessages.stream()
+                .map(ClickEventMessage::eventId)
+                .toList();
+        return clickEventRepository.findExistingEventIdsByEventIdIn(eventIds).stream()
+                .collect(Collectors.toSet());
+    }
+
+    private Map<UUID, Url> findUrlsById(Collection<ClickEventMessage> eventMessages) {
+        Set<UUID> urlIds = eventMessages.stream()
+                .map(ClickEventMessage::urlId)
+                .collect(Collectors.toSet());
+
+        return urlRepository.findAllById(urlIds).stream()
+                .collect(Collectors.toMap(Url::getId, url -> url));
     }
 
     private LocalDate resolveStatDate(ClickEventMessage eventMessage) {

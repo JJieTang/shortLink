@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,6 +22,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -53,11 +55,12 @@ class ClickEventConsumerTest {
     @Test
     void shouldSkipDuplicateEvent() {
         ClickEventMessage eventMessage = sampleEventMessage();
-        when(clickEventRepository.existsByEventId(eventMessage.eventId())).thenReturn(true);
+        when(clickEventRepository.findExistingEventIdsByEventIdIn(List.of(eventMessage.eventId())))
+                .thenReturn(List.of(eventMessage.eventId()));
 
         clickEventConsumer.consume(eventMessage);
 
-        verify(urlRepository, never()).findById(any());
+        verify(urlRepository, never()).findAllById(any());
         verify(clickEventRepository, never()).save(any());
         verify(urlDailyStatRepository, never()).upsertDailyCounts(any(), any(), any(Long.class), any(Long.class));
         verify(urlRepository, never()).incrementTotalClicks(any(), any(Long.class));
@@ -70,8 +73,9 @@ class ClickEventConsumerTest {
         url.setId(eventMessage.urlId());
         url.setShortCode(eventMessage.shortCode());
 
-        when(clickEventRepository.existsByEventId(eventMessage.eventId())).thenReturn(false);
-        when(urlRepository.findById(eventMessage.urlId())).thenReturn(Optional.of(url));
+        when(clickEventRepository.findExistingEventIdsByEventIdIn(List.of(eventMessage.eventId())))
+                .thenReturn(List.of());
+        when(urlRepository.findAllById(any())).thenReturn(List.of(url));
         when(clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
                 eq(eventMessage.urlId()),
                 eq(eventMessage.ipAddress()),
@@ -118,8 +122,9 @@ class ClickEventConsumerTest {
         Url url = new Url();
         url.setId(eventMessage.urlId());
 
-        when(clickEventRepository.existsByEventId(eventMessage.eventId())).thenReturn(false);
-        when(urlRepository.findById(eventMessage.urlId())).thenReturn(Optional.of(url));
+        when(clickEventRepository.findExistingEventIdsByEventIdIn(List.of(eventMessage.eventId())))
+                .thenReturn(List.of());
+        when(urlRepository.findAllById(any())).thenReturn(List.of(url));
         when(clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
                 eq(eventMessage.urlId()),
                 eq(eventMessage.ipAddress()),
@@ -147,13 +152,74 @@ class ClickEventConsumerTest {
     void shouldThrowWhenUrlDoesNotExist() {
         ClickEventMessage eventMessage = sampleEventMessage();
 
-        when(clickEventRepository.existsByEventId(eventMessage.eventId())).thenReturn(false);
-        when(urlRepository.findById(eventMessage.urlId())).thenReturn(Optional.empty());
+        when(clickEventRepository.findExistingEventIdsByEventIdIn(List.of(eventMessage.eventId())))
+                .thenReturn(List.of());
+        when(urlRepository.findAllById(any())).thenReturn(List.of());
 
         assertThrows(ResourceNotFoundException.class, () -> clickEventConsumer.consume(eventMessage));
         verify(clickEventRepository, never()).save(any());
         verify(urlDailyStatRepository, never()).upsertDailyCounts(any(), any(), any(Long.class), any(Long.class));
         verify(urlRepository, never()).incrementTotalClicks(any(), any(Long.class));
+    }
+
+    @Test
+    void shouldDeduplicateBatchAndFetchUrlsOnce() {
+        ClickEventMessage first = sampleEventMessage();
+        ClickEventMessage duplicate = new ClickEventMessage(
+                first.eventId(),
+                first.urlId(),
+                first.shortCode(),
+                first.clickedAt(),
+                first.ipAddress(),
+                first.referrer(),
+                first.userAgent(),
+                first.traceId()
+        );
+        ClickEventMessage second = new ClickEventMessage(
+                UUID.fromString("550e8400-e29b-41d4-a716-446655440099"),
+                UUID.fromString("550e8400-e29b-41d4-a716-446655440002"),
+                "xyz5678",
+                Instant.parse("2026-03-31T12:05:00Z"),
+                "127.0.0.2",
+                "https://example.com/ref-2",
+                "Mozilla/5.0",
+                "trace-456"
+        );
+
+        Url firstUrl = new Url();
+        firstUrl.setId(first.urlId());
+        Url secondUrl = new Url();
+        secondUrl.setId(second.urlId());
+
+        when(clickEventRepository.findExistingEventIdsByEventIdIn(List.of(first.eventId(), second.eventId())))
+                .thenReturn(List.of());
+        when(urlRepository.findAllById(any())).thenReturn(List.of(firstUrl, secondUrl));
+        when(clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
+                eq(first.urlId()),
+                eq(first.ipAddress()),
+                eq(Instant.parse("2026-03-31T00:00:00Z")),
+                eq(Instant.parse("2026-04-01T00:00:00Z"))
+        )).thenReturn(false);
+        when(clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
+                eq(second.urlId()),
+                eq(second.ipAddress()),
+                eq(Instant.parse("2026-03-31T00:00:00Z")),
+                eq(Instant.parse("2026-04-01T00:00:00Z"))
+        )).thenReturn(false);
+        when(userAgentParser.parse(any())).thenReturn(
+                new UserAgentParser.ParsedUserAgent("desktop", "Mac OS X", "Chrome")
+        );
+        when(geoLookupService.lookup(any())).thenReturn(
+                new GeoLookupService.GeoLocation("CH", "Zurich")
+        );
+
+        clickEventConsumer.consumeBatch(List.of(first, duplicate, second));
+
+        verify(clickEventRepository).findExistingEventIdsByEventIdIn(List.of(first.eventId(), second.eventId()));
+        verify(urlRepository).findAllById(any());
+        verify(clickEventRepository, times(2)).save(any());
+        verify(urlDailyStatRepository, times(2)).upsertDailyCounts(any(), any(), any(Long.class), any(Long.class));
+        verify(urlRepository, times(2)).incrementTotalClicks(any(), any(Long.class));
     }
 
     private ClickEventMessage sampleEventMessage() {

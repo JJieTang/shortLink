@@ -3,6 +3,9 @@ package com.shortlink.shortlink.controller;
 import com.shortlink.shortlink.event.ClickEventMessage;
 import com.shortlink.shortlink.service.ClickEventPublisher;
 import com.shortlink.shortlink.service.RedirectService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -20,14 +23,27 @@ public class RedirectController {
 
     private final RedirectService redirectService;
     private final ClickEventPublisher clickEventPublisher;
+    private final Counter redirectsCounter;
+    private final Timer redirectLatencyTimer;
 
-    public RedirectController(RedirectService redirectService, ClickEventPublisher clickEventPublisher) {
+    public RedirectController(
+            RedirectService redirectService,
+            ClickEventPublisher clickEventPublisher,
+            MeterRegistry meterRegistry
+    ) {
         this.redirectService = redirectService;
         this.clickEventPublisher = clickEventPublisher;
+        this.redirectsCounter = Counter.builder("shortlink_redirects_total")
+                .description("Total number of successful short-link redirects")
+                .register(meterRegistry);
+        this.redirectLatencyTimer = Timer.builder("shortlink_redirect_latency_seconds")
+                .description("Latency of successful short-link redirects")
+                .register(meterRegistry);
     }
 
     @GetMapping("/{shortCode}")
     public ResponseEntity<Void> redirect(@PathVariable String shortCode, HttpServletRequest request) {
+        Timer.Sample sample = Timer.start();
         RedirectService.RedirectTarget redirectTarget = redirectService.resolveRedirectTarget(shortCode);
 
         clickEventPublisher.publish(new ClickEventMessage(
@@ -40,6 +56,8 @@ public class RedirectController {
                 request.getHeader(HttpHeaders.USER_AGENT),
                 resolveTraceId(request)
         ));
+        redirectsCounter.increment();
+        sample.stop(redirectLatencyTimer);
 
         return ResponseEntity.status(HttpStatus.FOUND)
                 .header(HttpHeaders.LOCATION, URI.create(redirectTarget.originalUrl()).toString())

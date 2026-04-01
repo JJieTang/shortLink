@@ -5,6 +5,7 @@ import com.shortlink.shortlink.exception.ResourceNotFoundException;
 import com.shortlink.shortlink.model.ClickEvent;
 import com.shortlink.shortlink.model.Url;
 import com.shortlink.shortlink.repository.ClickEventRepository;
+import com.shortlink.shortlink.repository.UrlDailyStatBatchRepository;
 import com.shortlink.shortlink.repository.UrlDailyStatRepository;
 import com.shortlink.shortlink.repository.UrlRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,6 +65,7 @@ class ClickEventConsumerTest {
         verify(urlRepository, never()).findAllById(any());
         verify(clickEventRepository, never()).save(any());
         verify(clickEventRepository, never()).saveAll(any());
+        verify(urlDailyStatRepository, never()).upsertDailyCountsBatch(any());
         verify(urlDailyStatRepository, never()).upsertDailyCounts(any(), any(), any(Long.class), any(Long.class));
         verify(urlRepository, never()).incrementTotalClicks(any(), any(Long.class));
     }
@@ -125,12 +127,13 @@ class ClickEventConsumerTest {
                         && "Mozilla/5.0".equals(clickEvent.getUserAgent())
                         && "trace-123".equals(clickEvent.getTraceId())
         ));
-        verify(urlDailyStatRepository).upsertDailyCounts(
-                eventMessage.urlId(),
-                LocalDate.of(2026, 3, 31),
-                1,
-                1
-        );
+        verify(urlDailyStatRepository).upsertDailyCountsBatch(argThatDailyCountUpdates(updates ->
+                updates.size() == 1
+                        && updates.getFirst().urlId().equals(eventMessage.urlId())
+                        && updates.getFirst().statDate().equals(LocalDate.of(2026, 3, 31))
+                        && updates.getFirst().clickCount() == 1
+                        && updates.getFirst().uniqueCount() == 1
+        ));
         verify(urlRepository).incrementTotalClicks(eventMessage.urlId(), 1);
     }
 
@@ -158,12 +161,13 @@ class ClickEventConsumerTest {
 
         clickEventConsumer.consume(eventMessage);
 
-        verify(urlDailyStatRepository).upsertDailyCounts(
-                eventMessage.urlId(),
-                LocalDate.of(2026, 3, 31),
-                1,
-                0
-        );
+        verify(urlDailyStatRepository).upsertDailyCountsBatch(argThatDailyCountUpdates(updates ->
+                updates.size() == 1
+                        && updates.getFirst().urlId().equals(eventMessage.urlId())
+                        && updates.getFirst().statDate().equals(LocalDate.of(2026, 3, 31))
+                        && updates.getFirst().clickCount() == 1
+                        && updates.getFirst().uniqueCount() == 0
+        ));
     }
 
     @Test
@@ -177,6 +181,7 @@ class ClickEventConsumerTest {
         assertThrows(ResourceNotFoundException.class, () -> clickEventConsumer.consume(eventMessage));
         verify(clickEventRepository, never()).save(any());
         verify(clickEventRepository, never()).saveAll(any());
+        verify(urlDailyStatRepository, never()).upsertDailyCountsBatch(any());
         verify(urlDailyStatRepository, never()).upsertDailyCounts(any(), any(), any(Long.class), any(Long.class));
         verify(urlRepository, never()).incrementTotalClicks(any(), any(Long.class));
     }
@@ -240,7 +245,7 @@ class ClickEventConsumerTest {
         verify(clickEventRepository).saveAll(clickEventsCaptor.capture());
         assertEquals(2, toList(clickEventsCaptor.getValue()).size());
         verify(clickEventRepository, never()).save(any());
-        verify(urlDailyStatRepository, times(2)).upsertDailyCounts(any(), any(), any(Long.class), any(Long.class));
+        verify(urlDailyStatRepository).upsertDailyCountsBatch(argThatDailyCountUpdates(updates -> updates.size() == 2));
         verify(urlRepository, times(2)).incrementTotalClicks(any(), any(Long.class));
     }
 
@@ -288,12 +293,13 @@ class ClickEventConsumerTest {
         ArgumentCaptor<Iterable<ClickEvent>> clickEventsCaptor = ArgumentCaptor.forClass(Iterable.class);
         verify(clickEventRepository).saveAll(clickEventsCaptor.capture());
         assertEquals(2, toList(clickEventsCaptor.getValue()).size());
-        verify(urlDailyStatRepository).upsertDailyCounts(
-                first.urlId(),
-                LocalDate.of(2026, 3, 31),
-                2,
-                2
-        );
+        verify(urlDailyStatRepository).upsertDailyCountsBatch(argThatDailyCountUpdates(updates ->
+                updates.size() == 1
+                        && updates.getFirst().urlId().equals(first.urlId())
+                        && updates.getFirst().statDate().equals(LocalDate.of(2026, 3, 31))
+                        && updates.getFirst().clickCount() == 2
+                        && updates.getFirst().uniqueCount() == 2
+        ));
         verify(urlRepository).incrementTotalClicks(first.urlId(), 2);
     }
 
@@ -311,6 +317,11 @@ class ClickEventConsumerTest {
     }
 
     private static ClickEvent argThat(org.mockito.ArgumentMatcher<ClickEvent> matcher) {
+        return org.mockito.ArgumentMatchers.argThat(matcher);
+    }
+
+    private static List<UrlDailyStatBatchRepository.DailyCountUpdate> argThatDailyCountUpdates(
+            org.mockito.ArgumentMatcher<List<UrlDailyStatBatchRepository.DailyCountUpdate>> matcher) {
         return org.mockito.ArgumentMatchers.argThat(matcher);
     }
 

@@ -11,7 +11,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
-public interface UrlDailyStatRepository extends JpaRepository<UrlDailyStat, UrlDailyStatId> {
+public interface UrlDailyStatRepository extends JpaRepository<UrlDailyStat, UrlDailyStatId>, UrlDailyStatBatchRepository {
 
     List<UrlDailyStat> findByIdUrlIdOrderByIdStatDateDesc(UUID urlId);
 

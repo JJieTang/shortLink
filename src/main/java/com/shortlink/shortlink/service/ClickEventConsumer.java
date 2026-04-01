@@ -5,6 +5,7 @@ import com.shortlink.shortlink.exception.ResourceNotFoundException;
 import com.shortlink.shortlink.model.ClickEvent;
 import com.shortlink.shortlink.model.Url;
 import com.shortlink.shortlink.repository.ClickEventRepository;
+import com.shortlink.shortlink.repository.UrlDailyStatBatchRepository;
 import com.shortlink.shortlink.repository.UrlDailyStatRepository;
 import com.shortlink.shortlink.repository.UrlRepository;
 import org.springframework.stereotype.Service;
@@ -89,12 +90,16 @@ public class ClickEventConsumer {
         }
 
         clickEventRepository.saveAll(clickEvents);
-        dailyCountsByKey.forEach((key, counts) -> urlDailyStatRepository.upsertDailyCounts(
-                key.urlId(),
-                key.statDate(),
-                counts.clickCount(),
-                counts.uniqueCount()
-        ));
+        List<UrlDailyStatBatchRepository.DailyCountUpdate> dailyCountUpdates = dailyCountsByKey.entrySet().stream()
+                .map(entry -> new UrlDailyStatBatchRepository.DailyCountUpdate(
+                        entry.getKey().urlId(),
+                        entry.getKey().statDate(),
+                        entry.getValue().clickCount(),
+                        entry.getValue().uniqueCount()
+                ))
+                .toList();
+
+        urlDailyStatRepository.upsertDailyCountsBatch(dailyCountUpdates);
         totalClicksByUrlId.forEach(urlRepository::incrementTotalClicks);
     }
 

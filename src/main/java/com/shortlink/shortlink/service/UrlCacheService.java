@@ -1,6 +1,8 @@
 package com.shortlink.shortlink.service;
 
 import com.shortlink.shortlink.model.Url;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -22,31 +24,44 @@ public class UrlCacheService {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final Duration urlTtl;
+    private final Counter cacheHitsCounter;
+    private final Counter cacheMissesCounter;
 
     public UrlCacheService(
             StringRedisTemplate stringRedisTemplate,
+            MeterRegistry meterRegistry,
             @Value("${app.cache.url-ttl}") Duration urlTtl) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.urlTtl = urlTtl;
+        this.cacheHitsCounter = Counter.builder("shortlink_cache_hits_total")
+                .description("Redis URL cache hits")
+                .register(meterRegistry);
+        this.cacheMissesCounter = Counter.builder("shortlink_cache_misses_total")
+                .description("Redis URL cache misses")
+                .register(meterRegistry);
     }
 
     public Optional<CachedUrl> findByShortCode(String shortCode) {
         Map<Object, Object> entries = stringRedisTemplate.opsForHash().entries(buildKey(shortCode));
         if (entries.isEmpty()) {
+            cacheMissesCounter.increment();
             return Optional.empty();
         }
 
         Object urlId = entries.get(URL_ID_FIELD);
         Object originalUrl = entries.get(ORIGINAL_URL_FIELD);
         if (!(urlId instanceof String urlIdValue) || urlIdValue.isBlank()) {
+            cacheMissesCounter.increment();
             return Optional.empty();
         }
 
         if (!(originalUrl instanceof String originalUrlValue) || originalUrlValue.isBlank()) {
+            cacheMissesCounter.increment();
             return Optional.empty();
         }
 
         Object expiresAt = entries.get(EXPIRES_AT_FIELD);
+        cacheHitsCounter.increment();
         return Optional.of(new CachedUrl(
                 UUID.fromString(urlIdValue),
                 originalUrlValue,

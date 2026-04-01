@@ -12,6 +12,7 @@ import com.shortlink.shortlink.repository.UserRepository;
 import com.shortlink.shortlink.util.Base62Encoder;
 import com.shortlink.shortlink.util.ReservedWords;
 import com.shortlink.shortlink.util.UrlValidator;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,7 @@ class UrlShorteningServiceTest {
         userRepository = mock(UserRepository.class);
         urlCacheService = mock(UrlCacheService.class);
         meterRegistry = new SimpleMeterRegistry();
+        Counter urlsCreatedCounter = meterRegistry.counter("shortlink_urls_created_total");
         urlShorteningService = new UrlShorteningService(
                 base62Encoder,
                 urlRepository,
@@ -56,7 +58,7 @@ class UrlShorteningServiceTest {
                 new UrlValidator(),
                 new ReservedWords(),
                 urlCacheService,
-                meterRegistry,
+                urlsCreatedCounter,
                 "http://localhost:8080"
         );
     }

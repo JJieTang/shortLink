@@ -4,9 +4,9 @@ import com.shortlink.shortlink.event.ClickEventMessage;
 import com.shortlink.shortlink.service.ClickEventPublisher;
 import com.shortlink.shortlink.service.RedirectService;
 import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,16 +29,13 @@ public class RedirectController {
     public RedirectController(
             RedirectService redirectService,
             ClickEventPublisher clickEventPublisher,
-            MeterRegistry meterRegistry
+            @Qualifier("redirectsCounter") Counter redirectsCounter,
+            @Qualifier("redirectLatencyTimer") Timer redirectLatencyTimer
     ) {
         this.redirectService = redirectService;
         this.clickEventPublisher = clickEventPublisher;
-        this.redirectsCounter = Counter.builder("shortlink_redirects_total")
-                .description("Total number of successful short-link redirects")
-                .register(meterRegistry);
-        this.redirectLatencyTimer = Timer.builder("shortlink_redirect_latency_seconds")
-                .description("Latency of successful short-link redirects")
-                .register(meterRegistry);
+        this.redirectsCounter = redirectsCounter;
+        this.redirectLatencyTimer = redirectLatencyTimer;
     }
 
     @GetMapping("/{shortCode}")

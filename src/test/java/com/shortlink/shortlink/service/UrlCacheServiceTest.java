@@ -33,12 +33,15 @@ class UrlCacheServiceTest {
         stringRedisTemplate = mock(StringRedisTemplate.class);
         hashOperations = mock(HashOperations.class);
         meterRegistry = new SimpleMeterRegistry();
+        Counter cacheHitsCounter = meterRegistry.counter("shortlink_cache_hits_total");
+        Counter cacheMissesCounter = meterRegistry.counter("shortlink_cache_misses_total");
 
         when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
 
         urlCacheService = new UrlCacheService(
                 stringRedisTemplate,
-                meterRegistry,
+                cacheHitsCounter,
+                cacheMissesCounter,
                 Duration.ofHours(24)
         );
     }

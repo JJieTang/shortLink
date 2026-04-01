@@ -14,7 +14,7 @@ import com.shortlink.shortlink.exception.AliasTakenException;
 import com.shortlink.shortlink.exception.InvalidAliasException;
 import com.shortlink.shortlink.exception.ShortCodeGenerationException;
 import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -47,7 +47,7 @@ public class UrlShorteningService {
             UrlValidator urlValidator,
             ReservedWords reservedWords,
             UrlCacheService urlCacheService,
-            MeterRegistry meterRegistry,
+            @Qualifier("urlsCreatedCounter") Counter urlsCreatedCounter,
             @Value("${app.base-url:http://localhost:8080}") String baseUrl) {
         this.base62Encoder = base62Encoder;
         this.urlRepository = urlRepository;
@@ -55,9 +55,7 @@ public class UrlShorteningService {
         this.urlValidator = urlValidator;
         this.reservedWords = reservedWords;
         this.urlCacheService = urlCacheService;
-        this.urlsCreatedCounter = Counter.builder("shortlink_urls_created_total")
-                .description("Total number of successfully created short URLs")
-                .register(meterRegistry);
+        this.urlsCreatedCounter = urlsCreatedCounter;
         this.baseUrl = baseUrl;
     }
 

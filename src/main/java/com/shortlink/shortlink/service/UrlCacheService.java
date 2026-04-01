@@ -2,9 +2,9 @@ package com.shortlink.shortlink.service;
 
 import com.shortlink.shortlink.model.Url;
 import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -32,16 +32,13 @@ public class UrlCacheService {
 
     public UrlCacheService(
             StringRedisTemplate stringRedisTemplate,
-            MeterRegistry meterRegistry,
+            @Qualifier("cacheHitsCounter") Counter cacheHitsCounter,
+            @Qualifier("cacheMissesCounter") Counter cacheMissesCounter,
             @Value("${app.cache.url-ttl}") Duration urlTtl) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.urlTtl = urlTtl;
-        this.cacheHitsCounter = Counter.builder("shortlink_cache_hits_total")
-                .description("Redis URL cache hits")
-                .register(meterRegistry);
-        this.cacheMissesCounter = Counter.builder("shortlink_cache_misses_total")
-                .description("Redis URL cache misses")
-                .register(meterRegistry);
+        this.cacheHitsCounter = cacheHitsCounter;
+        this.cacheMissesCounter = cacheMissesCounter;
     }
 
     public Optional<CachedUrl> findByShortCode(String shortCode) {

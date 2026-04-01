@@ -3,8 +3,6 @@ package com.shortlink.shortlink.config;
 import com.shortlink.shortlink.event.ClickEventMessage;
 import com.shortlink.shortlink.service.ClickEventConsumer;
 import com.shortlink.shortlink.service.ClickEventDlqHandler;
-import io.micrometer.core.instrument.Gauge;
-import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,7 +13,6 @@ import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
-import org.springframework.data.redis.connection.stream.PendingMessagesSummary;
 import org.springframework.data.redis.connection.stream.ReadOffset;
 import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -52,17 +49,6 @@ public class RedisConfig {
                         .build();
 
         return StreamMessageListenerContainer.create(connectionFactory, options);
-    }
-
-    @Bean
-    public Gauge clickEventConsumerLagGauge(
-            RedisConnectionFactory connectionFactory,
-            MeterRegistry meterRegistry,
-            @Value("${app.click-stream.stream-key}") String streamKey,
-            @Value("${app.click-stream.consumer-group}") String consumerGroup) {
-        return Gauge.builder("shortlink_consumer_lag", () -> readConsumerLag(connectionFactory, streamKey, consumerGroup))
-                .description("Current number of pending click-event messages for the Redis Stream consumer group")
-                .register(meterRegistry);
     }
 
     @Bean
@@ -241,27 +227,6 @@ public class RedisConfig {
         }
 
         return false;
-    }
-
-    private double readConsumerLag(
-            RedisConnectionFactory connectionFactory,
-            String streamKey,
-            String consumerGroup) {
-        try (RedisConnection connection = connectionFactory.getConnection()) {
-            PendingMessagesSummary summary = connection.streamCommands().xPending(
-                    STRING_SERIALIZER.serialize(streamKey),
-                    consumerGroup
-            );
-            return summary == null ? 0.0 : summary.getTotalPendingMessages();
-        } catch (Exception exception) {
-            log.debug(
-                    "Failed to read consumer lag for stream '{}' and group '{}'",
-                    streamKey,
-                    consumerGroup,
-                    exception
-            );
-            return 0.0;
-        }
     }
 
     private ClickEventMessage toClickEventMessage(Map<String, String> payload) {

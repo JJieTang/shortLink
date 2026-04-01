@@ -32,12 +32,13 @@ class ClickEventPublisherTest {
         stringRedisTemplate = mock(StringRedisTemplate.class);
         streamOperations = mock(StreamOperations.class);
         meterRegistry = new SimpleMeterRegistry();
+        Counter droppedEventsCounter = meterRegistry.counter("shortlink_click_events_dropped_total");
 
         when(stringRedisTemplate.opsForStream()).thenReturn(streamOperations);
 
         clickEventPublisher = new ClickEventPublisher(
                 stringRedisTemplate,
-                meterRegistry,
+                droppedEventsCounter,
                 "click-events"
         );
     }

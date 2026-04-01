@@ -3,6 +3,8 @@ package com.shortlink.shortlink.controller;
 import com.shortlink.shortlink.exception.GlobalExceptionHandler;
 import com.shortlink.shortlink.service.ClickEventPublisher;
 import com.shortlink.shortlink.service.RedirectService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,10 +33,13 @@ class RedirectControllerTest {
         redirectService = mock(RedirectService.class);
         clickEventPublisher = mock(ClickEventPublisher.class);
         meterRegistry = new SimpleMeterRegistry();
+        Counter redirectsCounter = meterRegistry.counter("shortlink_redirects_total");
+        Timer redirectLatencyTimer = meterRegistry.timer("shortlink_redirect_latency_seconds");
         RedirectController redirectController = new RedirectController(
                 redirectService,
                 clickEventPublisher,
-                meterRegistry
+                redirectsCounter,
+                redirectLatencyTimer
         );
 
         mockMvc = MockMvcBuilders.standaloneSetup(redirectController)

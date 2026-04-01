@@ -2,9 +2,9 @@ package com.shortlink.shortlink.service;
 
 import com.shortlink.shortlink.event.ClickEventMessage;
 import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamRecords;
@@ -25,13 +25,11 @@ public class ClickEventPublisher {
 
     public ClickEventPublisher(
             StringRedisTemplate stringRedisTemplate,
-            MeterRegistry meterRegistry,
+            @Qualifier("droppedEventsCounter") Counter droppedEventsCounter,
             @Value("${app.click-stream.stream-key}") String streamKey) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.streamKey = streamKey;
-        this.droppedEventsCounter = Counter.builder("shortlink_click_events_dropped_total")
-                .description("Number of click events dropped because they could not be published")
-                .register(meterRegistry);
+        this.droppedEventsCounter = droppedEventsCounter;
     }
 
     public void publish(ClickEventMessage eventMessage) {

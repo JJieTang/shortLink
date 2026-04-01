@@ -24,6 +24,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 
 @Configuration
 public class RedisConfig {
@@ -33,6 +34,7 @@ public class RedisConfig {
     @Bean
     public StreamMessageListenerContainer<String, MapRecord<String, String, String>> clickEventListenerContainer(
             RedisConnectionFactory connectionFactory,
+            Executor clickEventExecutor,
             @Value("${app.click-stream.batch-size}") int batchSize,
             @Value("${app.click-stream.poll-timeout}") Duration pollTimeout) {
         StringRedisSerializer serializer = new StringRedisSerializer();
@@ -40,6 +42,7 @@ public class RedisConfig {
                 StreamMessageListenerContainer.StreamMessageListenerContainerOptions.<String, MapRecord<String, String, String>>builder()
                         .batchSize(batchSize)
                         .pollTimeout(pollTimeout)
+                        .executor(clickEventExecutor)
                         .serializer(serializer)
                         .autoStartup(false)
                         .build();

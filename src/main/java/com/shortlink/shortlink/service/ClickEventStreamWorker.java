@@ -3,20 +3,25 @@ package com.shortlink.shortlink.service;
 import com.shortlink.shortlink.event.ClickEventMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.ReadOffset;
 import org.springframework.data.redis.connection.stream.StreamOffset;
+import org.springframework.data.redis.connection.stream.StreamReadOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.stream.StreamMessageListenerContainer;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PreDestroy;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class ClickEventStreamWorker {
@@ -24,59 +29,76 @@ public class ClickEventStreamWorker {
     private static final Logger log = LoggerFactory.getLogger(ClickEventStreamWorker.class);
 
     private final StringRedisTemplate stringRedisTemplate;
-    private final StreamMessageListenerContainer<String, MapRecord<String, String, String>> listenerContainer;
     private final ClickEventConsumer clickEventConsumer;
     private final ClickEventDlqHandler clickEventDlqHandler;
+    private final Executor clickEventExecutor;
     private final String streamKey;
     private final String consumerGroup;
     private final String consumerName;
     private final int maxRetries;
+    private final int batchSize;
+    private final Duration pollTimeout;
+    private final AtomicBoolean running = new AtomicBoolean(false);
 
     public ClickEventStreamWorker(
             StringRedisTemplate stringRedisTemplate,
-            StreamMessageListenerContainer<String, MapRecord<String, String, String>> listenerContainer,
             ClickEventConsumer clickEventConsumer,
             ClickEventDlqHandler clickEventDlqHandler,
+            @Qualifier("clickEventExecutor") Executor clickEventExecutor,
             @Value("${app.click-stream.stream-key}") String streamKey,
             @Value("${app.click-stream.consumer-group}") String consumerGroup,
             @Value("${app.click-stream.consumer-name}") String consumerName,
-            @Value("${app.click-stream.max-retries}") int maxRetries) {
+            @Value("${app.click-stream.max-retries}") int maxRetries,
+            @Value("${app.click-stream.batch-size}") int batchSize,
+            @Value("${app.click-stream.poll-timeout}") Duration pollTimeout) {
         this.stringRedisTemplate = stringRedisTemplate;
-        this.listenerContainer = listenerContainer;
         this.clickEventConsumer = clickEventConsumer;
         this.clickEventDlqHandler = clickEventDlqHandler;
+        this.clickEventExecutor = clickEventExecutor;
         this.streamKey = streamKey;
         this.consumerGroup = consumerGroup;
         this.consumerName = consumerName;
         this.maxRetries = maxRetries;
+        this.batchSize = batchSize;
+        this.pollTimeout = pollTimeout;
     }
 
-    public void startListener() {
-        try {
-            listenerContainer.receive(
-                    Consumer.from(consumerGroup, consumerName),
-                    StreamOffset.create(streamKey, ReadOffset.lastConsumed()),
-                    message -> {
-                        try {
-                            processMessageBatch(List.of(message));
-                        } catch (Exception exception) {
-                            handleFailedMessage(message, exception);
-                        }
-                    }
+    public void startPolling() {
+        if (!running.compareAndSet(false, true)) {
+            log.debug(
+                    "Click-event polling worker for stream '{}' is already running for consumer '{}'",
+                    streamKey,
+                    consumerName
             );
-            listenerContainer.start();
+            return;
+        }
+
+        clickEventExecutor.execute(this::pollLoop);
+        log.info(
+                "Started Redis stream polling worker for stream '{}' with consumer group '{}' and consumer '{}'",
+                streamKey,
+                consumerGroup,
+                consumerName
+        );
+    }
+
+    public void stopPolling() {
+        if (running.compareAndSet(true, false)) {
             log.info(
-                    "Started Redis stream listener for stream '{}' with consumer group '{}' and consumer '{}'",
+                    "Stopping Redis stream polling worker for stream '{}' with consumer group '{}' and consumer '{}'",
                     streamKey,
                     consumerGroup,
                     consumerName
             );
-        } catch (Exception exception) {
-            log.warn("Skipping Redis stream listener startup for stream '{}'", streamKey, exception);
         }
     }
 
-    public void processMessageBatch(List<MapRecord<String, String, String>> messages) {
+    @PreDestroy
+    void shutdown() {
+        stopPolling();
+    }
+
+    public void processMessageBatch(List<MapRecord<String, Object, Object>> messages) {
         if (messages.isEmpty()) {
             return;
         }
@@ -86,13 +108,65 @@ public class ClickEventStreamWorker {
                 .toList();
 
         clickEventConsumer.consumeBatch(eventMessages);
-        for (MapRecord<String, String, String> message : messages) {
+        for (MapRecord<String, Object, Object> message : messages) {
             stringRedisTemplate.opsForStream().acknowledge(streamKey, consumerGroup, message.getId());
         }
     }
 
+    private void pollLoop() {
+        try {
+            while (running.get()) {
+                try {
+                    List<MapRecord<String, Object, Object>> messages = stringRedisTemplate.opsForStream().read(
+                            Consumer.from(consumerGroup, consumerName),
+                            StreamReadOptions.empty().count(batchSize).block(pollTimeout),
+                            StreamOffset.create(streamKey, ReadOffset.lastConsumed())
+                    );
+
+                    if (!running.get()) {
+                        break;
+                    }
+
+                    if (messages == null || messages.isEmpty()) {
+                        continue;
+                    }
+
+                    try {
+                        processMessageBatch(messages);
+                    } catch (Exception exception) {
+                        for (MapRecord<String, Object, Object> message : messages) {
+                            handleFailedMessage(message, exception);
+                        }
+                    }
+                } catch (Exception exception) {
+                    if (!running.get()) {
+                        log.debug(
+                                "Click-event polling worker for stream '{}' stopped while waiting for more messages",
+                                streamKey
+                        );
+                        break;
+                    }
+
+                    log.warn("Failed to read click-event batch from stream '{}'", streamKey, exception);
+                }
+            }
+        } finally {
+            running.set(false);
+            try {
+                log.info(
+                        "Stopped Redis stream polling worker for stream '{}' with consumer group '{}' and consumer '{}'",
+                        streamKey,
+                        consumerGroup,
+                        consumerName
+                );
+            } catch (Exception exception) {
+                log.debug("Failed to log polling-worker shutdown for stream '{}'", streamKey, exception);
+            }
+        }
+    }
+
     private void handleFailedMessage(
-            MapRecord<String, String, String> message,
+            MapRecord<String, Object, Object> message,
             Exception exception) {
         int retryCount = readRetryCount(message.getValue());
 
@@ -131,16 +205,16 @@ public class ClickEventStreamWorker {
     }
 
     private void requeueWithIncrementedRetry(
-            MapRecord<String, String, String> message,
+            MapRecord<String, Object, Object> message,
             int nextRetryCount) {
-        Map<String, String> payload = new LinkedHashMap<>(message.getValue());
+        Map<String, String> payload = stringPayload(message.getValue());
         payload.put("retryCount", String.valueOf(nextRetryCount));
         payload.put("lastRetriedAt", Instant.now().toString());
         stringRedisTemplate.opsForStream().add(streamKey, payload);
     }
 
-    private int readRetryCount(Map<String, String> payload) {
-        String rawRetryCount = payload.get("retryCount");
+    private int readRetryCount(Map<Object, Object> payload) {
+        String rawRetryCount = stringValue(payload.get("retryCount"));
         if (rawRetryCount == null || rawRetryCount.isBlank()) {
             return 0;
         }
@@ -153,16 +227,31 @@ public class ClickEventStreamWorker {
         }
     }
 
-    private ClickEventMessage toClickEventMessage(Map<String, String> payload) {
+    private ClickEventMessage toClickEventMessage(Map<Object, Object> payload) {
         return new ClickEventMessage(
-                UUID.fromString(payload.get("eventId")),
-                UUID.fromString(payload.get("urlId")),
-                payload.get("shortCode"),
-                Instant.parse(payload.get("clickedAt")),
-                payload.get("ipAddress"),
-                payload.get("referrer"),
-                payload.get("userAgent"),
-                payload.get("traceId")
+                UUID.fromString(String.valueOf(payload.get("eventId"))),
+                UUID.fromString(String.valueOf(payload.get("urlId"))),
+                stringValue(payload.get("shortCode")),
+                Instant.parse(String.valueOf(payload.get("clickedAt"))),
+                stringValue(payload.get("ipAddress")),
+                stringValue(payload.get("referrer")),
+                stringValue(payload.get("userAgent")),
+                stringValue(payload.get("traceId"))
         );
+    }
+
+    private Map<String, String> stringPayload(Map<Object, Object> payload) {
+        Map<String, String> values = new LinkedHashMap<>();
+        for (Map.Entry<Object, Object> entry : payload.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null) {
+                continue;
+            }
+            values.put(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
+        }
+        return values;
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 }

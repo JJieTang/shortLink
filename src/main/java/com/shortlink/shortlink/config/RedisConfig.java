@@ -9,38 +9,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.ReadOffset;
-import org.springframework.data.redis.stream.StreamMessageListenerContainer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
-
-import java.time.Duration;
-import java.util.concurrent.Executor;
 
 @Configuration
 public class RedisConfig {
 
     private static final Logger log = LoggerFactory.getLogger(RedisConfig.class);
     private static final StringRedisSerializer STRING_SERIALIZER = new StringRedisSerializer();
-
-    @Bean
-    public StreamMessageListenerContainer<String, MapRecord<String, String, String>> clickEventListenerContainer(
-            RedisConnectionFactory connectionFactory,
-            Executor clickEventExecutor,
-            @Value("${app.click-stream.batch-size}") int batchSize,
-            @Value("${app.click-stream.poll-timeout}") Duration pollTimeout) {
-        StringRedisSerializer serializer = new StringRedisSerializer();
-        StreamMessageListenerContainer.StreamMessageListenerContainerOptions<String, MapRecord<String, String, String>> options =
-                StreamMessageListenerContainer.StreamMessageListenerContainerOptions.<String, MapRecord<String, String, String>>builder()
-                        .batchSize(batchSize)
-                        .pollTimeout(pollTimeout)
-                        .executor(clickEventExecutor)
-                        .serializer(serializer)
-                        .autoStartup(false)
-                        .build();
-
-        return StreamMessageListenerContainer.create(connectionFactory, options);
-    }
 
     @Bean
     public ApplicationRunner clickStreamInitializer(
@@ -50,7 +26,7 @@ public class RedisConfig {
             @Value("${app.click-stream.consumer-group}") String consumerGroup) {
         return args -> {
             initializeConsumerGroup(connectionFactory, streamKey, consumerGroup);
-            clickEventStreamWorker.startListener();
+            clickEventStreamWorker.startPolling();
         };
     }
 

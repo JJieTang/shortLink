@@ -24,8 +24,14 @@ public class ClickEventDlqHandler {
         this.dlqStreamKey = dlqStreamKey;
     }
 
-    public void moveToDlq(MapRecord<String, String, String> message, Exception exception) {
-        Map<String, String> payload = new LinkedHashMap<>(message.getValue());
+    public void moveToDlq(MapRecord<String, Object, Object> message, Exception exception) {
+        Map<String, String> payload = new LinkedHashMap<>();
+        for (Map.Entry<Object, Object> entry : message.getValue().entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null) {
+                continue;
+            }
+            payload.put(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
+        }
         payload.put("originalMessageId", message.getId().getValue());
         payload.put("failedAt", Instant.now().toString());
         payload.put("errorType", exception.getClass().getSimpleName());

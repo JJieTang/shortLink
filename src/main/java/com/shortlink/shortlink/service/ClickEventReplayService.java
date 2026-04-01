@@ -1,6 +1,8 @@
 package com.shortlink.shortlink.service;
 
 import com.shortlink.shortlink.exception.ResourceNotFoundException;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.domain.Range;
@@ -21,11 +23,15 @@ public class ClickEventReplayService {
 
     public ClickEventReplayService(
             StringRedisTemplate stringRedisTemplate,
+            MeterRegistry meterRegistry,
             @Value("${app.click-stream.stream-key}") String streamKey,
             @Value("${app.click-stream.dlq-stream-key}") String dlqStreamKey) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.streamKey = streamKey;
         this.dlqStreamKey = dlqStreamKey;
+        Gauge.builder("shortlink_dlq_size", this, ClickEventReplayService::dlqSize)
+                .description("Current number of click-event messages in the DLQ stream")
+                .register(meterRegistry);
     }
 
     public void replay(MapRecord<String, Object, Object> dlqMessage) {
@@ -97,6 +103,11 @@ public class ClickEventReplayService {
 
     private String stringValue(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    private double dlqSize() {
+        Long size = stringRedisTemplate.opsForStream().size(dlqStreamKey);
+        return size == null ? 0.0 : size.doubleValue();
     }
 
     public record DlqMessageView(

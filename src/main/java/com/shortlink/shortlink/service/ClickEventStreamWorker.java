@@ -133,9 +133,7 @@ public class ClickEventStreamWorker {
                     try {
                         processMessageBatch(messages);
                     } catch (Exception exception) {
-                        for (MapRecord<String, Object, Object> message : messages) {
-                            handleFailedMessage(message, exception);
-                        }
+                        fallbackToSingleMessageProcessing(messages, exception);
                     }
                 } catch (Exception exception) {
                     if (!running.get()) {
@@ -160,6 +158,25 @@ public class ClickEventStreamWorker {
                 );
             } catch (Exception exception) {
                 log.debug("Failed to log polling-worker shutdown for stream '{}'", streamKey, exception);
+            }
+        }
+    }
+
+    private void fallbackToSingleMessageProcessing(
+            List<MapRecord<String, Object, Object>> messages,
+            Exception batchException) {
+        log.warn(
+                "Batch processing failed for {} click-event messages from stream '{}'. Falling back to per-message handling.",
+                messages.size(),
+                streamKey,
+                batchException
+        );
+
+        for (MapRecord<String, Object, Object> message : messages) {
+            try {
+                processMessageBatch(List.of(message));
+            } catch (Exception messageException) {
+                handleFailedMessage(message, messageException);
             }
         }
     }

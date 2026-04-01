@@ -5,8 +5,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.redis.connection.stream.PendingMessages;
 import org.springframework.data.redis.connection.stream.ReadOffset;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamOffset;
@@ -28,6 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ClickEventStreamWorker {
 
     private static final Logger log = LoggerFactory.getLogger(ClickEventStreamWorker.class);
+    private static final Duration PENDING_CLAIM_IDLE_TIME = Duration.ZERO;
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ClickEventConsumer clickEventConsumer;
@@ -124,8 +127,64 @@ public class ClickEventStreamWorker {
         }
     }
 
+    void recoverPendingMessages() {
+        while (running.get()) {
+            PendingMessages pendingMessages = stringRedisTemplate.opsForStream().pending(
+                    streamKey,
+                    consumerGroup,
+                    Range.unbounded(),
+                    batchSize,
+                    PENDING_CLAIM_IDLE_TIME
+            );
+
+            if (pendingMessages == null || pendingMessages.isEmpty()) {
+                return;
+            }
+
+            RecordId[] pendingRecordIds = pendingMessages.stream()
+                    .map(pendingMessage -> RecordId.of(pendingMessage.getIdAsString()))
+                    .toArray(RecordId[]::new);
+            List<MapRecord<String, Object, Object>> claimedMessages = stringRedisTemplate.opsForStream().claim(
+                    streamKey,
+                    consumerGroup,
+                    consumerName,
+                    PENDING_CLAIM_IDLE_TIME,
+                    pendingRecordIds
+            );
+
+            if (claimedMessages == null || claimedMessages.isEmpty()) {
+                log.debug(
+                        "No pending click-event messages could be claimed for consumer '{}' in group '{}'",
+                        consumerName,
+                        consumerGroup
+                );
+                return;
+            }
+
+            log.info(
+                    "Recovered {} pending click-event messages for consumer '{}' in group '{}'",
+                    claimedMessages.size(),
+                    consumerName,
+                    consumerGroup
+            );
+            processPolledMessages(claimedMessages);
+        }
+    }
+
     private void pollLoop() {
         try {
+            if (running.get()) {
+                try {
+                    recoverPendingMessages();
+                } catch (Exception exception) {
+                    log.warn(
+                            "Failed to recover pending click-event messages for consumer group '{}'",
+                            consumerGroup,
+                            exception
+                    );
+                }
+            }
+
             while (running.get()) {
                 try {
                     List<MapRecord<String, Object, Object>> messages = stringRedisTemplate.opsForStream().read(

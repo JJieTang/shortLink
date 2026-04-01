@@ -3,9 +3,12 @@ package com.shortlink.shortlink.service;
 import com.shortlink.shortlink.event.ClickEventMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.mockito.invocation.Invocation;
+import org.springframework.data.domain.Range;
+import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.redis.connection.stream.PendingMessage;
+import org.springframework.data.redis.connection.stream.PendingMessages;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.core.StreamOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -133,6 +136,80 @@ class ClickEventStreamWorkerTest {
         verify(clickEventDlqHandler).moveToDlq(eq(badRecord), any(IllegalStateException.class));
         verify(clickEventDlqHandler, never()).moveToDlq(eq(goodRecord), any());
         assertEquals(0, acknowledgements.stream().filter(recordIds -> recordIds.size() == 2).count());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldRecoverPendingMessagesBeforeReadingNewOnes() {
+        ClickEventMessage pendingEvent = eventMessage(
+                UUID.fromString("550e8400-e29b-41d4-a716-446655440010"),
+                UUID.fromString("550e8400-e29b-41d4-a716-446655440110"),
+                "pending-link",
+                "203.0.113.20"
+        );
+
+        MapRecord<String, Object, Object> pendingRecord = mock(MapRecord.class);
+        RecordId pendingRecordId = RecordId.of("1743500000010-0");
+        when(pendingRecord.getId()).thenReturn(pendingRecordId);
+        when(pendingRecord.getValue()).thenReturn(payloadFor(pendingEvent));
+
+        PendingMessages firstPendingBatch = new PendingMessages(
+                "click-event-consumers",
+                List.of(new PendingMessage(
+                        pendingRecordId,
+                        Consumer.from("click-event-consumers", "stale-consumer"),
+                        Duration.ofSeconds(30),
+                        1
+                ))
+        );
+        PendingMessages emptyPendingBatch = new PendingMessages("click-event-consumers", List.of());
+
+        when(streamOperations.pending(
+                eq("click-events"),
+                eq("click-event-consumers"),
+                eq(Range.unbounded()),
+                eq(50L),
+                eq(Duration.ZERO)
+        )).thenReturn(firstPendingBatch, emptyPendingBatch);
+        when(streamOperations.claim(
+                eq("click-events"),
+                eq("click-event-consumers"),
+                eq("consumer-a"),
+                eq(Duration.ZERO),
+                any(RecordId[].class)
+        )).thenReturn(List.of(pendingRecord));
+
+        clickEventStreamWorker.startPolling();
+        clickEventStreamWorker.recoverPendingMessages();
+        clickEventStreamWorker.stopPolling();
+
+        verify(streamOperations, times(2)).pending(
+                "click-events",
+                "click-event-consumers",
+                Range.unbounded(),
+                50L,
+                Duration.ZERO
+        );
+        verify(streamOperations).claim(
+                eq("click-events"),
+                eq("click-event-consumers"),
+                eq("consumer-a"),
+                eq(Duration.ZERO),
+                any(RecordId[].class)
+        );
+        verify(clickEventConsumer).consumeBatch(argThat(eventMessages ->
+                eventMessages.size() == 1
+                        && eventMessages.getFirst().eventId().equals(pendingEvent.eventId())
+        ));
+
+        List<List<RecordId>> acknowledgements = org.mockito.Mockito.mockingDetails(streamOperations)
+                .getInvocations()
+                .stream()
+                .filter(invocation -> invocation.getMethod().getName().equals("acknowledge"))
+                .map(this::toAcknowledgedRecordIds)
+                .collect(Collectors.toList());
+        assertEquals(List.of(List.of(pendingRecordId)), acknowledgements);
+        verify(clickEventDlqHandler, never()).moveToDlq(any(), any());
     }
 
     private ClickEventMessage eventMessage(UUID eventId, UUID urlId, String shortCode, String ipAddress) {

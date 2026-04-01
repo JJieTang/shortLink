@@ -45,6 +45,19 @@ public class ClickEventReplayService {
         replay(messages.getFirst());
     }
 
+    public List<DlqMessageView> listDlqMessages() {
+        List<MapRecord<String, Object, Object>> messages =
+                stringRedisTemplate.opsForStream().range(dlqStreamKey, Range.unbounded());
+
+        if (messages == null || messages.isEmpty()) {
+            return List.of();
+        }
+
+        return messages.stream()
+                .map(this::toDlqMessageView)
+                .toList();
+    }
+
     private Map<String, String> toReplayPayload(MapRecord<String, Object, Object> dlqMessage) {
         Map<String, String> payload = new LinkedHashMap<>();
 
@@ -65,5 +78,35 @@ public class ClickEventReplayService {
         payload.put("replayedFromDlqMessageId", dlqMessage.getId().getValue());
 
         return payload;
+    }
+
+    private DlqMessageView toDlqMessageView(MapRecord<String, Object, Object> dlqMessage) {
+        Map<Object, Object> payload = dlqMessage.getValue();
+
+        return new DlqMessageView(
+                dlqMessage.getId().getValue(),
+                stringValue(payload.get("eventId")),
+                stringValue(payload.get("urlId")),
+                stringValue(payload.get("shortCode")),
+                stringValue(payload.get("failedAt")),
+                stringValue(payload.get("errorType")),
+                stringValue(payload.get("errorMessage")),
+                stringValue(payload.get("retryCount"))
+        );
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    public record DlqMessageView(
+            String messageId,
+            String eventId,
+            String urlId,
+            String shortCode,
+            String failedAt,
+            String errorType,
+            String errorMessage,
+            String retryCount) {
     }
 }

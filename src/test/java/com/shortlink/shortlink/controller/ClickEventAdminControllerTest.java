@@ -8,10 +8,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.util.List;
+
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -31,7 +36,46 @@ class ClickEventAdminControllerTest {
     }
 
     @Test
+    void shouldListDlqMessages() throws Exception {
+        when(clickEventReplayService.listDlqMessages()).thenReturn(List.of(
+                new ClickEventReplayService.DlqMessageView(
+                        "1774973958500-0",
+                        "550e8400-e29b-41d4-a716-446655440000",
+                        "550e8400-e29b-41d4-a716-446655440001",
+                        "promo-link",
+                        "2026-03-31T16:19:18Z",
+                        "IllegalStateException",
+                        "Intentional test failure",
+                        "3"
+                )
+        ));
+
+        mockMvc.perform(get("/api/v1/admin/click-events/dlq"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].messageId").value("1774973958500-0"))
+                .andExpect(jsonPath("$[0].shortCode").value("promo-link"))
+                .andExpect(jsonPath("$[0].errorType").value("IllegalStateException"))
+                .andExpect(jsonPath("$[0].retryCount").value("3"));
+
+        verify(clickEventReplayService).listDlqMessages();
+    }
+
+    @Test
+    void shouldReturnEmptyDlqList() throws Exception {
+        when(clickEventReplayService.listDlqMessages()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/admin/click-events/dlq"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        verify(clickEventReplayService).listDlqMessages();
+    }
+
+    @Test
     void shouldAcceptReplayRequest() throws Exception {
+        doNothing().when(clickEventReplayService).replayByMessageId("1774973958500-0");
+
         mockMvc.perform(post("/api/v1/admin/click-events/dlq/1774973958500-0/replay"))
                 .andExpect(status().isAccepted());
 

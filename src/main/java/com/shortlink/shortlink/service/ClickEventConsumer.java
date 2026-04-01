@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Collection;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,19 +66,47 @@ public class ClickEventConsumer {
         }
 
         Map<UUID, Url> urlsById = findUrlsById(pendingMessages);
+        Map<UniqueVisitorKey, Long> uniqueIncrementCache = new LinkedHashMap<>();
+        List<ClickEvent> clickEvents = new ArrayList<>();
+        Map<DailyStatKey, DailyCounts> dailyCountsByKey = new LinkedHashMap<>();
+        Map<UUID, Long> totalClicksByUrlId = new LinkedHashMap<>();
+
         for (ClickEventMessage eventMessage : pendingMessages) {
-            consumeSingle(eventMessage, urlsById);
+            LocalDate statDate = resolveStatDate(eventMessage);
+            long uniqueIncrement = resolveUniqueIncrement(eventMessage, statDate, uniqueIncrementCache);
+            Url url = requireUrl(urlsById, eventMessage.urlId());
+
+            clickEvents.add(toClickEvent(eventMessage, url));
+            dailyCountsByKey.merge(
+                    new DailyStatKey(eventMessage.urlId(), statDate),
+                    new DailyCounts(1L, uniqueIncrement),
+                    (existing, incoming) -> new DailyCounts(
+                            existing.clickCount() + incoming.clickCount(),
+                            existing.uniqueCount() + incoming.uniqueCount()
+                    )
+            );
+            totalClicksByUrlId.merge(eventMessage.urlId(), 1L, Long::sum);
         }
+
+        clickEventRepository.saveAll(clickEvents);
+        dailyCountsByKey.forEach((key, counts) -> urlDailyStatRepository.upsertDailyCounts(
+                key.urlId(),
+                key.statDate(),
+                counts.clickCount(),
+                counts.uniqueCount()
+        ));
+        totalClicksByUrlId.forEach(urlRepository::incrementTotalClicks);
     }
 
-    private void consumeSingle(ClickEventMessage eventMessage, Map<UUID, Url> urlsById) {
-        LocalDate statDate = resolveStatDate(eventMessage);
-        long uniqueIncrement = resolveUniqueIncrement(eventMessage, statDate);
-        Url url = urlsById.get(eventMessage.urlId());
+    private Url requireUrl(Map<UUID, Url> urlsById, UUID urlId) {
+        Url url = urlsById.get(urlId);
         if (url == null) {
-            throw new ResourceNotFoundException("URL not found for click event: " + eventMessage.urlId());
+            throw new ResourceNotFoundException("URL not found for click event: " + urlId);
         }
+        return url;
+    }
 
+    private ClickEvent toClickEvent(ClickEventMessage eventMessage, Url url) {
         UserAgentParser.ParsedUserAgent parsedUserAgent = userAgentParser.parse(eventMessage.userAgent());
         GeoLookupService.GeoLocation geoLocation = geoLookupService.lookup(eventMessage.ipAddress());
 
@@ -95,14 +124,7 @@ public class ClickEventConsumer {
         clickEvent.setUserAgent(eventMessage.userAgent());
         clickEvent.setTraceId(eventMessage.traceId());
 
-        clickEventRepository.save(clickEvent);
-        urlDailyStatRepository.upsertDailyCounts(
-                eventMessage.urlId(),
-                statDate,
-                1,
-                uniqueIncrement
-        );
-        urlRepository.incrementTotalClicks(eventMessage.urlId(), 1);
+        return clickEvent;
     }
 
     private List<ClickEventMessage> deduplicateBatch(List<ClickEventMessage> eventMessages) {
@@ -134,20 +156,40 @@ public class ClickEventConsumer {
         return LocalDate.ofInstant(eventMessage.clickedAt(), ZoneOffset.UTC);
     }
 
-    private long resolveUniqueIncrement(ClickEventMessage eventMessage, LocalDate statDate) {
+    private long resolveUniqueIncrement(
+            ClickEventMessage eventMessage,
+            LocalDate statDate,
+            Map<UniqueVisitorKey, Long> uniqueIncrementCache) {
         String ipAddress = eventMessage.ipAddress();
         if (ipAddress == null || ipAddress.isBlank()) {
+            return 0;
+        }
+
+        UniqueVisitorKey uniqueVisitorKey = new UniqueVisitorKey(eventMessage.urlId(), statDate, ipAddress);
+        if (uniqueIncrementCache.containsKey(uniqueVisitorKey)) {
             return 0;
         }
 
         Instant startInclusive = statDate.atStartOfDay().toInstant(ZoneOffset.UTC);
         Instant endExclusive = statDate.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
 
-        return clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
+        long uniqueIncrement = clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
                 eventMessage.urlId(),
                 ipAddress,
                 startInclusive,
                 endExclusive
         ) ? 0 : 1;
+
+        uniqueIncrementCache.put(uniqueVisitorKey, uniqueIncrement);
+        return uniqueIncrement;
+    }
+
+    private record DailyStatKey(UUID urlId, LocalDate statDate) {
+    }
+
+    private record DailyCounts(long clickCount, long uniqueCount) {
+    }
+
+    private record UniqueVisitorKey(UUID urlId, LocalDate statDate, String ipAddress) {
     }
 }

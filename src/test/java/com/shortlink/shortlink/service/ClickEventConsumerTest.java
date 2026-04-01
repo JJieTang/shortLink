@@ -9,11 +9,12 @@ import com.shortlink.shortlink.repository.UrlDailyStatRepository;
 import com.shortlink.shortlink.repository.UrlRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -62,6 +63,7 @@ class ClickEventConsumerTest {
 
         verify(urlRepository, never()).findAllById(any());
         verify(clickEventRepository, never()).save(any());
+        verify(clickEventRepository, never()).saveAll(any());
         verify(urlDailyStatRepository, never()).upsertDailyCounts(any(), any(), any(Long.class), any(Long.class));
         verify(urlRepository, never()).incrementTotalClicks(any(), any(Long.class));
     }
@@ -88,12 +90,28 @@ class ClickEventConsumerTest {
         when(geoLookupService.lookup(eventMessage.ipAddress())).thenReturn(
                 new GeoLookupService.GeoLocation("CH", "Zurich")
         );
-        when(clickEventRepository.save(any(ClickEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         clickEventConsumer.consume(eventMessage);
 
-        verify(clickEventRepository).save(any(ClickEvent.class));
-        verify(clickEventRepository).save(argThat(clickEvent ->
+        ArgumentCaptor<Iterable<ClickEvent>> clickEventsCaptor = ArgumentCaptor.forClass(Iterable.class);
+        verify(clickEventRepository).saveAll(clickEventsCaptor.capture());
+        List<ClickEvent> savedEvents = toList(clickEventsCaptor.getValue());
+        assertEquals(1, savedEvents.size());
+        ClickEvent savedEvent = savedEvents.getFirst();
+        assertEquals(url, savedEvent.getUrl());
+        assertEquals(eventMessage.eventId(), savedEvent.getEventId());
+        assertEquals(eventMessage.clickedAt(), savedEvent.getClickedAt());
+        assertEquals("127.0.0.1", savedEvent.getIpAddress());
+        assertEquals("CH", savedEvent.getCountry());
+        assertEquals("Zurich", savedEvent.getCity());
+        assertEquals("desktop", savedEvent.getDeviceType());
+        assertEquals("Mac OS X", savedEvent.getOs());
+        assertEquals("Chrome", savedEvent.getBrowser());
+        assertEquals("https://example.com/ref", savedEvent.getReferrer());
+        assertEquals("Mozilla/5.0", savedEvent.getUserAgent());
+        assertEquals("trace-123", savedEvent.getTraceId());
+        verify(clickEventRepository, never()).save(any());
+        verify(clickEventRepository, never()).save(argThat(clickEvent ->
                 clickEvent.getUrl() == url
                         && clickEvent.getEventId().equals(eventMessage.eventId())
                         && clickEvent.getClickedAt().equals(eventMessage.clickedAt())
@@ -158,6 +176,7 @@ class ClickEventConsumerTest {
 
         assertThrows(ResourceNotFoundException.class, () -> clickEventConsumer.consume(eventMessage));
         verify(clickEventRepository, never()).save(any());
+        verify(clickEventRepository, never()).saveAll(any());
         verify(urlDailyStatRepository, never()).upsertDailyCounts(any(), any(), any(Long.class), any(Long.class));
         verify(urlRepository, never()).incrementTotalClicks(any(), any(Long.class));
     }
@@ -217,9 +236,65 @@ class ClickEventConsumerTest {
 
         verify(clickEventRepository).findExistingEventIdsByEventIdIn(List.of(first.eventId(), second.eventId()));
         verify(urlRepository).findAllById(any());
-        verify(clickEventRepository, times(2)).save(any());
+        ArgumentCaptor<Iterable<ClickEvent>> clickEventsCaptor = ArgumentCaptor.forClass(Iterable.class);
+        verify(clickEventRepository).saveAll(clickEventsCaptor.capture());
+        assertEquals(2, toList(clickEventsCaptor.getValue()).size());
+        verify(clickEventRepository, never()).save(any());
         verify(urlDailyStatRepository, times(2)).upsertDailyCounts(any(), any(), any(Long.class), any(Long.class));
         verify(urlRepository, times(2)).incrementTotalClicks(any(), any(Long.class));
+    }
+
+    @Test
+    void shouldAggregateDailyStatsAndTotalClicksForSameUrlWithinBatch() {
+        ClickEventMessage first = sampleEventMessage();
+        ClickEventMessage second = new ClickEventMessage(
+                UUID.fromString("550e8400-e29b-41d4-a716-446655440099"),
+                first.urlId(),
+                first.shortCode(),
+                Instant.parse("2026-03-31T12:05:00Z"),
+                "127.0.0.2",
+                "https://example.com/ref-2",
+                "Mozilla/5.0",
+                "trace-456"
+        );
+
+        Url url = new Url();
+        url.setId(first.urlId());
+
+        when(clickEventRepository.findExistingEventIdsByEventIdIn(List.of(first.eventId(), second.eventId())))
+                .thenReturn(List.of());
+        when(urlRepository.findAllById(any())).thenReturn(List.of(url));
+        when(clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
+                eq(first.urlId()),
+                eq(first.ipAddress()),
+                eq(Instant.parse("2026-03-31T00:00:00Z")),
+                eq(Instant.parse("2026-04-01T00:00:00Z"))
+        )).thenReturn(false);
+        when(clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
+                eq(second.urlId()),
+                eq(second.ipAddress()),
+                eq(Instant.parse("2026-03-31T00:00:00Z")),
+                eq(Instant.parse("2026-04-01T00:00:00Z"))
+        )).thenReturn(false);
+        when(userAgentParser.parse(any())).thenReturn(
+                new UserAgentParser.ParsedUserAgent("desktop", "Mac OS X", "Chrome")
+        );
+        when(geoLookupService.lookup(any())).thenReturn(
+                new GeoLookupService.GeoLocation("CH", "Zurich")
+        );
+
+        clickEventConsumer.consumeBatch(List.of(first, second));
+
+        ArgumentCaptor<Iterable<ClickEvent>> clickEventsCaptor = ArgumentCaptor.forClass(Iterable.class);
+        verify(clickEventRepository).saveAll(clickEventsCaptor.capture());
+        assertEquals(2, toList(clickEventsCaptor.getValue()).size());
+        verify(urlDailyStatRepository).upsertDailyCounts(
+                first.urlId(),
+                LocalDate.of(2026, 3, 31),
+                2,
+                2
+        );
+        verify(urlRepository).incrementTotalClicks(first.urlId(), 2);
     }
 
     private ClickEventMessage sampleEventMessage() {
@@ -237,5 +312,11 @@ class ClickEventConsumerTest {
 
     private static ClickEvent argThat(org.mockito.ArgumentMatcher<ClickEvent> matcher) {
         return org.mockito.ArgumentMatchers.argThat(matcher);
+    }
+
+    private List<ClickEvent> toList(Iterable<ClickEvent> clickEvents) {
+        List<ClickEvent> values = new ArrayList<>();
+        clickEvents.forEach(values::add);
+        return values;
     }
 }

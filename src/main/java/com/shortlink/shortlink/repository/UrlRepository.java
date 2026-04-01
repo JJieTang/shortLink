@@ -11,7 +11,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface UrlRepository extends JpaRepository<Url, UUID> {
+public interface UrlRepository extends JpaRepository<Url, UUID>, UrlBatchRepository {
 
     Optional<Url> findByShortCodeAndIsActiveTrue(String shortCode);
 

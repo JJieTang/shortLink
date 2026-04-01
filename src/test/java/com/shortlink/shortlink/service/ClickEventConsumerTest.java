@@ -5,6 +5,7 @@ import com.shortlink.shortlink.exception.ResourceNotFoundException;
 import com.shortlink.shortlink.model.ClickEvent;
 import com.shortlink.shortlink.model.Url;
 import com.shortlink.shortlink.repository.ClickEventRepository;
+import com.shortlink.shortlink.repository.UrlBatchRepository;
 import com.shortlink.shortlink.repository.UrlDailyStatBatchRepository;
 import com.shortlink.shortlink.repository.UrlDailyStatRepository;
 import com.shortlink.shortlink.repository.UrlRepository;
@@ -66,6 +67,7 @@ class ClickEventConsumerTest {
         verify(clickEventRepository, never()).save(any());
         verify(clickEventRepository, never()).saveAll(any());
         verify(urlDailyStatRepository, never()).upsertDailyCountsBatch(any());
+        verify(urlRepository, never()).incrementTotalClicksBatch(any());
         verify(urlDailyStatRepository, never()).upsertDailyCounts(any(), any(), any(Long.class), any(Long.class));
         verify(urlRepository, never()).incrementTotalClicks(any(), any(Long.class));
     }
@@ -134,7 +136,11 @@ class ClickEventConsumerTest {
                         && updates.getFirst().clickCount() == 1
                         && updates.getFirst().uniqueCount() == 1
         ));
-        verify(urlRepository).incrementTotalClicks(eventMessage.urlId(), 1);
+        verify(urlRepository).incrementTotalClicksBatch(argThatTotalClickUpdates(updates ->
+                updates.size() == 1
+                        && updates.getFirst().urlId().equals(eventMessage.urlId())
+                        && updates.getFirst().delta() == 1
+        ));
     }
 
     @Test
@@ -168,6 +174,11 @@ class ClickEventConsumerTest {
                         && updates.getFirst().clickCount() == 1
                         && updates.getFirst().uniqueCount() == 0
         ));
+        verify(urlRepository).incrementTotalClicksBatch(argThatTotalClickUpdates(updates ->
+                updates.size() == 1
+                        && updates.getFirst().urlId().equals(eventMessage.urlId())
+                        && updates.getFirst().delta() == 1
+        ));
     }
 
     @Test
@@ -182,6 +193,7 @@ class ClickEventConsumerTest {
         verify(clickEventRepository, never()).save(any());
         verify(clickEventRepository, never()).saveAll(any());
         verify(urlDailyStatRepository, never()).upsertDailyCountsBatch(any());
+        verify(urlRepository, never()).incrementTotalClicksBatch(any());
         verify(urlDailyStatRepository, never()).upsertDailyCounts(any(), any(), any(Long.class), any(Long.class));
         verify(urlRepository, never()).incrementTotalClicks(any(), any(Long.class));
     }
@@ -246,7 +258,9 @@ class ClickEventConsumerTest {
         assertEquals(2, toList(clickEventsCaptor.getValue()).size());
         verify(clickEventRepository, never()).save(any());
         verify(urlDailyStatRepository).upsertDailyCountsBatch(argThatDailyCountUpdates(updates -> updates.size() == 2));
-        verify(urlRepository, times(2)).incrementTotalClicks(any(), any(Long.class));
+        verify(urlRepository).incrementTotalClicksBatch(argThatTotalClickUpdates(updates ->
+                updates.size() == 2
+        ));
     }
 
     @Test
@@ -300,7 +314,11 @@ class ClickEventConsumerTest {
                         && updates.getFirst().clickCount() == 2
                         && updates.getFirst().uniqueCount() == 2
         ));
-        verify(urlRepository).incrementTotalClicks(first.urlId(), 2);
+        verify(urlRepository).incrementTotalClicksBatch(argThatTotalClickUpdates(updates ->
+                updates.size() == 1
+                        && updates.getFirst().urlId().equals(first.urlId())
+                        && updates.getFirst().delta() == 2
+        ));
     }
 
     private ClickEventMessage sampleEventMessage() {
@@ -322,6 +340,11 @@ class ClickEventConsumerTest {
 
     private static List<UrlDailyStatBatchRepository.DailyCountUpdate> argThatDailyCountUpdates(
             org.mockito.ArgumentMatcher<List<UrlDailyStatBatchRepository.DailyCountUpdate>> matcher) {
+        return org.mockito.ArgumentMatchers.argThat(matcher);
+    }
+
+    private static List<UrlBatchRepository.TotalClickUpdate> argThatTotalClickUpdates(
+            org.mockito.ArgumentMatcher<List<UrlBatchRepository.TotalClickUpdate>> matcher) {
         return org.mockito.ArgumentMatchers.argThat(matcher);
     }
 

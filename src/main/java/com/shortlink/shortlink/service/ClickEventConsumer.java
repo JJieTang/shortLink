@@ -5,6 +5,7 @@ import com.shortlink.shortlink.exception.ResourceNotFoundException;
 import com.shortlink.shortlink.model.ClickEvent;
 import com.shortlink.shortlink.model.Url;
 import com.shortlink.shortlink.repository.ClickEventRepository;
+import com.shortlink.shortlink.repository.UrlBatchRepository;
 import com.shortlink.shortlink.repository.UrlDailyStatBatchRepository;
 import com.shortlink.shortlink.repository.UrlDailyStatRepository;
 import com.shortlink.shortlink.repository.UrlRepository;
@@ -98,9 +99,12 @@ public class ClickEventConsumer {
                         entry.getValue().uniqueCount()
                 ))
                 .toList();
+        List<UrlBatchRepository.TotalClickUpdate> totalClickUpdates = totalClicksByUrlId.entrySet().stream()
+                .map(entry -> new UrlBatchRepository.TotalClickUpdate(entry.getKey(), entry.getValue()))
+                .toList();
 
         urlDailyStatRepository.upsertDailyCountsBatch(dailyCountUpdates);
-        totalClicksByUrlId.forEach(urlRepository::incrementTotalClicks);
+        urlRepository.incrementTotalClicksBatch(totalClickUpdates);
     }
 
     private Url requireUrl(Map<UUID, Url> urlsById, UUID urlId) {

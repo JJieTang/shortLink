@@ -112,6 +112,18 @@ public class ClickEventStreamWorker {
         acknowledgeBatch(messages);
     }
 
+    void processPolledMessages(List<MapRecord<String, Object, Object>> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+
+        try {
+            processMessageBatch(messages);
+        } catch (Exception exception) {
+            fallbackToSingleMessageProcessing(messages, exception);
+        }
+    }
+
     private void pollLoop() {
         try {
             while (running.get()) {
@@ -130,11 +142,7 @@ public class ClickEventStreamWorker {
                         continue;
                     }
 
-                    try {
-                        processMessageBatch(messages);
-                    } catch (Exception exception) {
-                        fallbackToSingleMessageProcessing(messages, exception);
-                    }
+                    processPolledMessages(messages);
                 } catch (Exception exception) {
                     if (!running.get()) {
                         log.debug(

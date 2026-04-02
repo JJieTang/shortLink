@@ -12,7 +12,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.HashOperations;
-import org.springframework.data.redis.core.StreamOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -34,6 +33,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
 
+    private static final String OWNER_EMAIL = "degradation-owner@example.com";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -46,10 +47,13 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private MeterRegistry meterRegistry;
 
+    private String ownerAccessToken;
+
     @BeforeEach
     void setUp() {
         clickEventRepository.deleteAll();
         urlRepository.deleteAll();
+        ownerAccessToken = issueAccessToken(OWNER_EMAIL, "Redis Degradation Owner");
     }
 
     @Test
@@ -59,6 +63,7 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
         double droppedEventsBefore = meterRegistry.get("shortlink_click_events_dropped_total").counter().count();
 
         mockMvc.perform(post("/api/v1/urls")
+                        .header("Authorization", bearer(ownerAccessToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -89,10 +94,8 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
         StringRedisTemplate failingStringRedisTemplate() {
             StringRedisTemplate stringRedisTemplate = mock(StringRedisTemplate.class);
             HashOperations<String, Object, Object> hashOperations = mock(HashOperations.class);
-            StreamOperations<String, Object, Object> streamOperations = mock(StreamOperations.class);
 
             when(stringRedisTemplate.opsForHash()).thenReturn((HashOperations) hashOperations);
-            when(stringRedisTemplate.opsForStream()).thenReturn((StreamOperations) streamOperations);
 
             RedisConnectionFailureException redisFailure =
                     new RedisConnectionFailureException("Simulated Redis outage");
@@ -101,7 +104,7 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
             doThrow(redisFailure).when(hashOperations).putAll(anyString(), anyMap());
             when(stringRedisTemplate.expire(anyString(), any(Duration.class))).thenThrow(redisFailure);
             when(stringRedisTemplate.delete(anyString())).thenThrow(redisFailure);
-            when(streamOperations.add(any())).thenThrow(redisFailure);
+            when(stringRedisTemplate.opsForStream()).thenThrow(redisFailure);
 
             return stringRedisTemplate;
         }

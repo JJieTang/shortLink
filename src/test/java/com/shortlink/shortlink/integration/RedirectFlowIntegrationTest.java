@@ -16,20 +16,26 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class RedirectFlowIntegrationTest extends AbstractIntegrationTest {
 
+    private static final String OWNER_EMAIL = "redirect-owner@example.com";
+
     @Autowired
     private MockMvc mockMvc;
 
     @Autowired
     private UrlRepository urlRepository;
 
+    private String ownerAccessToken;
+
     @BeforeEach
     void setUp() {
         urlRepository.deleteAll();
+        ownerAccessToken = issueAccessToken(OWNER_EMAIL, "Redirect Owner");
     }
 
     @Test
     void shouldRedirectWith302AfterUrlCreation() throws Exception {
         mockMvc.perform(post("/api/v1/urls")
+                        .header("Authorization", bearer(ownerAccessToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

@@ -53,6 +53,7 @@ public class JwtTokenProvider {
         Instant expiresAt = now.plus(accessTokenTtl);
 
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(userId.toString())
                 .issuer(issuer)
                 .issuedAt(Date.from(now))
@@ -69,6 +70,7 @@ public class JwtTokenProvider {
         Instant expiresAt = now.plus(refreshTokenTtl);
 
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(userId.toString())
                 .issuer(issuer)
                 .issuedAt(Date.from(now))

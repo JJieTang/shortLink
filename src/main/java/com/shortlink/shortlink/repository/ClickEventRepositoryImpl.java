@@ -3,8 +3,11 @@ package com.shortlink.shortlink.repository;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 // Spring Data picks up this custom repository fragment implementation by the `Impl` suffix.
@@ -28,13 +31,21 @@ public class ClickEventRepositoryImpl implements ClickEventBatchRepository {
         for (int i = 0; i < candidates.size(); i++) {
             UniqueVisitorCandidate candidate = candidates.get(i);
             valueRows.add("""
-                    (:urlId%s, :ipAddress%s, :statDate%s, :startInclusive%s, :endExclusive%s)
+                    (:urlId%s, CAST(:ipAddress%s AS inet), :statDate%s, :startInclusive%s, :endExclusive%s)
                     """.formatted(i, i, i, i, i).trim());
             parameters.addValue("urlId" + i, candidate.urlId());
             parameters.addValue("ipAddress" + i, candidate.ipAddress());
             parameters.addValue("statDate" + i, candidate.statDate());
-            parameters.addValue("startInclusive" + i, candidate.startInclusive());
-            parameters.addValue("endExclusive" + i, candidate.endExclusive());
+            parameters.addValue(
+                    "startInclusive" + i,
+                    OffsetDateTime.ofInstant(candidate.startInclusive(), ZoneOffset.UTC),
+                    Types.TIMESTAMP_WITH_TIMEZONE
+            );
+            parameters.addValue(
+                    "endExclusive" + i,
+                    OffsetDateTime.ofInstant(candidate.endExclusive(), ZoneOffset.UTC),
+                    Types.TIMESTAMP_WITH_TIMEZONE
+            );
         }
 
         String sql = """

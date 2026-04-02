@@ -1,14 +1,10 @@
 package com.shortlink.shortlink.integration;
 
-import com.shortlink.shortlink.model.User;
 import com.shortlink.shortlink.repository.UrlRepository;
-import com.shortlink.shortlink.repository.UserRepository;
-import com.shortlink.shortlink.security.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 
@@ -31,15 +27,6 @@ class UrlCrudIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private UrlRepository urlRepository;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private PasswordEncoder passwordEncoder;
-
-    @Autowired
-    private JwtTokenProvider jwtTokenProvider;
 
     private String ownerAccessToken;
     private String otherAccessToken;
@@ -129,21 +116,5 @@ class UrlCrudIntegrationTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(otherAccessToken)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error").value("NOT_FOUND"));
-    }
-
-    private String issueAccessToken(String email, String name) {
-        User user = new User();
-        user.setEmail(email);
-        user.setPasswordHash(passwordEncoder.encode("SecretPass123"));
-        user.setName(name);
-        user.setRole("USER");
-        user.setDailyQuota(100);
-
-        User savedUser = userRepository.save(user);
-        return jwtTokenProvider.generateAccessToken(savedUser.getId(), savedUser.getEmail(), savedUser.getRole());
-    }
-
-    private String bearer(String accessToken) {
-        return "Bearer " + accessToken;
     }
 }

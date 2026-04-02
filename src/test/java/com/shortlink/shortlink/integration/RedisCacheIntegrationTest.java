@@ -24,6 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class RedisCacheIntegrationTest extends AbstractIntegrationTest {
 
     private static final String CACHE_KEY_PREFIX = "url:";
+    private static final String OWNER_EMAIL = "cache-owner@example.com";
 
     @Autowired
     private MockMvc mockMvc;
@@ -31,8 +32,11 @@ class RedisCacheIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
+    private String ownerAccessToken;
+
     @BeforeEach
     void setUp() {
+        ownerAccessToken = issueAccessToken(OWNER_EMAIL, "Cache Owner");
         Set<String> cacheKeys = stringRedisTemplate.keys(CACHE_KEY_PREFIX + "*");
         if (cacheKeys != null && !cacheKeys.isEmpty()) {
             stringRedisTemplate.delete(cacheKeys);
@@ -42,6 +46,7 @@ class RedisCacheIntegrationTest extends AbstractIntegrationTest {
     @Test
     void shouldCacheOnCreateAndEvictOnDelete() throws Exception {
         mockMvc.perform(post("/api/v1/urls")
+                        .header("Authorization", bearer(ownerAccessToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -54,7 +59,8 @@ class RedisCacheIntegrationTest extends AbstractIntegrationTest {
         Map<Object, Object> cachedEntries = stringRedisTemplate.opsForHash().entries(cacheKey("cache-link"));
         assertEquals("https://example.com/cached", cachedEntries.get("originalUrl"));
 
-        mockMvc.perform(delete("/api/v1/urls/cache-link"))
+        mockMvc.perform(delete("/api/v1/urls/cache-link")
+                        .header("Authorization", bearer(ownerAccessToken)))
                 .andExpect(status().isNoContent());
 
         assertFalse(Boolean.TRUE.equals(stringRedisTemplate.hasKey(cacheKey("cache-link"))));
@@ -63,6 +69,7 @@ class RedisCacheIntegrationTest extends AbstractIntegrationTest {
     @Test
     void shouldWarmCacheAfterRedirectCacheMiss() throws Exception {
         mockMvc.perform(post("/api/v1/urls")
+                        .header("Authorization", bearer(ownerAccessToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

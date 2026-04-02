@@ -32,6 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ClickEventDlqIntegrationTest extends AbstractIntegrationTest {
 
     private static final String DLQ_STREAM_KEY = "click-events-dlq";
+    private static final String OWNER_EMAIL = "dlq-owner@example.com";
 
     @Autowired
     private MockMvc mockMvc;
@@ -42,15 +43,19 @@ class ClickEventDlqIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private ClickEventRepository clickEventRepository;
 
+    private String ownerAccessToken;
+
     @BeforeEach
     void setUp() {
         clickEventRepository.deleteAll();
         stringRedisTemplate.delete(DLQ_STREAM_KEY);
+        ownerAccessToken = issueAccessToken(OWNER_EMAIL, "DLQ Owner");
     }
 
     @Test
     void shouldMoveMessageToDlqAfterRetryLimit() throws Exception {
         mockMvc.perform(post("/api/v1/urls")
+                        .header("Authorization", bearer(ownerAccessToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -92,6 +97,11 @@ class ClickEventDlqIntegrationTest extends AbstractIntegrationTest {
             return new ClickEventConsumer(null, null, null, null, null) {
                 @Override
                 public void consume(ClickEventMessage eventMessage) {
+                    throw new IllegalStateException("Intentional test failure");
+                }
+
+                @Override
+                public void consumeBatch(List<ClickEventMessage> eventMessages) {
                     throw new IllegalStateException("Intentional test failure");
                 }
             };

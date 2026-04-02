@@ -35,6 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ClickEventReplayIntegrationTest extends AbstractIntegrationTest {
 
     private static final String DLQ_STREAM_KEY = "click-events-dlq";
+    private static final String OWNER_EMAIL = "replay-owner@example.com";
     @Autowired
     private MockMvc mockMvc;
 
@@ -53,17 +54,21 @@ class ClickEventReplayIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private UrlDailyStatRepository urlDailyStatRepository;
 
+    private String ownerAccessToken;
+
     @BeforeEach
     void setUp() {
         clickEventRepository.deleteAll();
         urlDailyStatRepository.deleteAll();
         urlRepository.deleteAll();
         stringRedisTemplate.delete(DLQ_STREAM_KEY);
+        ownerAccessToken = issueAccessToken(OWNER_EMAIL, "Replay Owner");
     }
 
     @Test
     void shouldReplayDlqMessageBackToMainStreamAndProcessIt() throws Exception {
         mockMvc.perform(post("/api/v1/urls")
+                        .header("Authorization", bearer(ownerAccessToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

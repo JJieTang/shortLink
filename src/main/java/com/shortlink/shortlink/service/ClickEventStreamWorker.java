@@ -1,6 +1,7 @@
 package com.shortlink.shortlink.service;
 
 import com.shortlink.shortlink.event.ClickEventMessage;
+import io.micrometer.core.instrument.Counter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -37,6 +38,7 @@ public class ClickEventStreamWorker {
     private final StringRedisTemplate stringRedisTemplate;
     private final ClickEventConsumer clickEventConsumer;
     private final ClickEventDlqHandler clickEventDlqHandler;
+    private final Counter clickProcessingErrorsCounter;
     private final Executor clickEventExecutor;
     private final String streamKey;
     private final String consumerGroup;
@@ -50,6 +52,7 @@ public class ClickEventStreamWorker {
             StringRedisTemplate stringRedisTemplate,
             ClickEventConsumer clickEventConsumer,
             ClickEventDlqHandler clickEventDlqHandler,
+            @Qualifier("clickProcessingErrorsCounter") Counter clickProcessingErrorsCounter,
             @Qualifier("clickEventExecutor") Executor clickEventExecutor,
             @Value("${app.click-stream.stream-key}") String streamKey,
             @Value("${app.click-stream.consumer-group}") String consumerGroup,
@@ -60,6 +63,7 @@ public class ClickEventStreamWorker {
         this.stringRedisTemplate = stringRedisTemplate;
         this.clickEventConsumer = clickEventConsumer;
         this.clickEventDlqHandler = clickEventDlqHandler;
+        this.clickProcessingErrorsCounter = clickProcessingErrorsCounter;
         this.clickEventExecutor = clickEventExecutor;
         this.streamKey = streamKey;
         this.consumerGroup = consumerGroup;
@@ -298,6 +302,7 @@ public class ClickEventStreamWorker {
     private void handleFailedMessage(
             MapRecord<String, Object, Object> message,
             Exception exception) {
+        clickProcessingErrorsCounter.increment();
         int retryCount = readRetryCount(message.getValue());
 
         try {

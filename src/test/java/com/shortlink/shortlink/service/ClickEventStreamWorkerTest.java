@@ -1,6 +1,7 @@
 package com.shortlink.shortlink.service;
 
 import com.shortlink.shortlink.event.ClickEventMessage;
+import io.micrometer.core.instrument.Counter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.invocation.Invocation;
@@ -38,6 +39,7 @@ class ClickEventStreamWorkerTest {
     private StreamOperations<String, Object, Object> streamOperations;
     private ClickEventConsumer clickEventConsumer;
     private ClickEventDlqHandler clickEventDlqHandler;
+    private Counter clickProcessingErrorsCounter;
     private Executor clickEventExecutor;
     private ClickEventStreamWorker clickEventStreamWorker;
 
@@ -48,6 +50,7 @@ class ClickEventStreamWorkerTest {
         streamOperations = mock(StreamOperations.class);
         clickEventConsumer = mock(ClickEventConsumer.class);
         clickEventDlqHandler = mock(ClickEventDlqHandler.class);
+        clickProcessingErrorsCounter = mock(Counter.class);
         clickEventExecutor = mock(Executor.class);
 
         when(stringRedisTemplate.opsForStream()).thenReturn((StreamOperations) streamOperations);
@@ -56,6 +59,7 @@ class ClickEventStreamWorkerTest {
                 stringRedisTemplate,
                 clickEventConsumer,
                 clickEventDlqHandler,
+                clickProcessingErrorsCounter,
                 clickEventExecutor,
                 "click-events",
                 "click-event-consumers",
@@ -135,6 +139,7 @@ class ClickEventStreamWorkerTest {
 
         verify(clickEventDlqHandler).moveToDlq(eq(badRecord), any(IllegalStateException.class));
         verify(clickEventDlqHandler, never()).moveToDlq(eq(goodRecord), any());
+        verify(clickProcessingErrorsCounter, times(1)).increment();
         assertEquals(0, acknowledgements.stream().filter(recordIds -> recordIds.size() == 2).count());
     }
 
@@ -210,6 +215,7 @@ class ClickEventStreamWorkerTest {
                 .collect(Collectors.toList());
         assertEquals(List.of(List.of(pendingRecordId)), acknowledgements);
         verify(clickEventDlqHandler, never()).moveToDlq(any(), any());
+        verify(clickProcessingErrorsCounter, never()).increment();
     }
 
     @Test

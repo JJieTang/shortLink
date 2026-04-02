@@ -64,6 +64,13 @@ public class MetricsConfig {
     }
 
     @Bean
+    public Counter clickProcessingErrorsCounter(MeterRegistry meterRegistry) {
+        return Counter.builder("shortlink_click_processing_errors_total")
+                .description("Number of click-event processing failures before retry or DLQ handling")
+                .register(meterRegistry);
+    }
+
+    @Bean
     public Gauge dlqSizeGauge(
             MeterRegistry meterRegistry,
             StringRedisTemplate stringRedisTemplate,

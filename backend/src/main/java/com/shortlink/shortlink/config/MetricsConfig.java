@@ -81,6 +81,13 @@ public class MetricsConfig {
     }
 
     @Bean
+    public Counter rateLimitedCounter(MeterRegistry meterRegistry) {
+        return Counter.builder("shortlink_rate_limited_total")
+                .description("Total number of requests rejected by rate limiting")
+                .register(meterRegistry);
+    }
+
+    @Bean
     public Gauge dlqSizeGauge(
             MeterRegistry meterRegistry,
             StringRedisTemplate stringRedisTemplate,

@@ -31,6 +31,8 @@ public class ClickEventStreamWorker {
 
     private static final Logger log = LoggerFactory.getLogger(ClickEventStreamWorker.class);
     private static final Duration PENDING_CLAIM_IDLE_TIME = Duration.ZERO;
+    private static final Duration READ_FAILURE_BASE_BACKOFF = Duration.ofSeconds(1);
+    private static final Duration READ_FAILURE_MAX_BACKOFF = Duration.ofSeconds(30);
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ClickEventConsumer clickEventConsumer;
@@ -172,6 +174,8 @@ public class ClickEventStreamWorker {
     }
 
     private void pollLoop() {
+        int consecutiveReadFailures = 0;
+
         try {
             if (running.get()) {
                 try {
@@ -192,6 +196,7 @@ public class ClickEventStreamWorker {
                             StreamReadOptions.empty().count(batchSize).block(pollTimeout),
                             StreamOffset.create(streamKey, ReadOffset.lastConsumed())
                     );
+                    consecutiveReadFailures = 0;
 
                     if (!running.get()) {
                         break;
@@ -211,7 +216,15 @@ public class ClickEventStreamWorker {
                         break;
                     }
 
-                    log.warn("Failed to read click-event batch from stream '{}'", streamKey, exception);
+                    consecutiveReadFailures++;
+                    Duration backoff = calculateReadFailureBackoff(consecutiveReadFailures);
+                    log.warn(
+                            "Failed to read click-event batch from stream '{}'. Backing off for {} ms before retrying.",
+                            streamKey,
+                            backoff.toMillis(),
+                            exception
+                    );
+                    pauseAfterReadFailure(backoff);
                 }
             }
         } finally {
@@ -226,6 +239,40 @@ public class ClickEventStreamWorker {
             } catch (Exception exception) {
                 log.debug("Failed to log polling-worker shutdown for stream '{}'", streamKey, exception);
             }
+        }
+    }
+
+    Duration calculateReadFailureBackoff(int consecutiveReadFailures) {
+        if (consecutiveReadFailures <= 0) {
+            return Duration.ZERO;
+        }
+
+        Duration backoff = READ_FAILURE_BASE_BACKOFF;
+        for (int i = 1; i < consecutiveReadFailures; i++) {
+            backoff = backoff.multipliedBy(2);
+            if (backoff.compareTo(READ_FAILURE_MAX_BACKOFF) >= 0) {
+                return READ_FAILURE_MAX_BACKOFF;
+            }
+        }
+
+        return backoff;
+    }
+
+    void pauseAfterReadFailure(Duration backoff) {
+        if (!running.get() || backoff.isZero() || backoff.isNegative()) {
+            return;
+        }
+
+        try {
+            Thread.sleep(backoff.toMillis());
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            running.set(false);
+            log.debug(
+                    "Interrupted while backing off after a click-event stream read failure for stream '{}'",
+                    streamKey,
+                    exception
+            );
         }
     }
 

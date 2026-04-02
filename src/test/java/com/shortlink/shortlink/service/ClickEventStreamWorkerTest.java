@@ -212,6 +212,18 @@ class ClickEventStreamWorkerTest {
         verify(clickEventDlqHandler, never()).moveToDlq(any(), any());
     }
 
+    @Test
+    void shouldUseExponentialBackoffForConsecutiveReadFailures() {
+        assertEquals(Duration.ZERO, clickEventStreamWorker.calculateReadFailureBackoff(0));
+        assertEquals(Duration.ofSeconds(1), clickEventStreamWorker.calculateReadFailureBackoff(1));
+        assertEquals(Duration.ofSeconds(2), clickEventStreamWorker.calculateReadFailureBackoff(2));
+        assertEquals(Duration.ofSeconds(4), clickEventStreamWorker.calculateReadFailureBackoff(3));
+        assertEquals(Duration.ofSeconds(8), clickEventStreamWorker.calculateReadFailureBackoff(4));
+        assertEquals(Duration.ofSeconds(16), clickEventStreamWorker.calculateReadFailureBackoff(5));
+        assertEquals(Duration.ofSeconds(30), clickEventStreamWorker.calculateReadFailureBackoff(6));
+        assertEquals(Duration.ofSeconds(30), clickEventStreamWorker.calculateReadFailureBackoff(7));
+    }
+
     private ClickEventMessage eventMessage(UUID eventId, UUID urlId, String shortCode, String ipAddress) {
         return new ClickEventMessage(
                 eventId,

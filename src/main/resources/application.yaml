@@ -37,6 +37,7 @@ app:
   click-stream:
     stream-key: click-events
     dlq-stream-key: click-events-dlq
+    max-length: 100000
     consumer-group: click-event-consumers
     consumer-name: ${CLICK_STREAM_CONSUMER_NAME:${spring.application.name}-consumer}
     batch-size: 50

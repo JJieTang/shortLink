@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.connection.RedisStreamCommands;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -22,20 +23,25 @@ public class ClickEventPublisher {
     private final StringRedisTemplate stringRedisTemplate;
     private final String streamKey;
     private final Counter droppedEventsCounter;
+    private final RedisStreamCommands.XAddOptions xAddOptions;
 
     public ClickEventPublisher(
             StringRedisTemplate stringRedisTemplate,
             @Qualifier("droppedEventsCounter") Counter droppedEventsCounter,
-            @Value("${app.click-stream.stream-key}") String streamKey) {
+            @Value("${app.click-stream.stream-key}") String streamKey,
+            @Value("${app.click-stream.max-length}") long streamMaxLength) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.streamKey = streamKey;
         this.droppedEventsCounter = droppedEventsCounter;
+        this.xAddOptions = RedisStreamCommands.XAddOptions.maxlen(streamMaxLength)
+                .approximateTrimming(true);
     }
 
     public void publish(ClickEventMessage eventMessage) {
         try {
             RecordId recordId = stringRedisTemplate.opsForStream().add(
-                    StreamRecords.mapBacked(toPayload(eventMessage)).withStreamKey(streamKey)
+                    StreamRecords.mapBacked(toPayload(eventMessage)).withStreamKey(streamKey),
+                    xAddOptions
             );
 
             log.debug(

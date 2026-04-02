@@ -5,6 +5,8 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.data.redis.connection.RedisStreamCommands;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.core.StreamOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -39,25 +41,33 @@ class ClickEventPublisherTest {
         clickEventPublisher = new ClickEventPublisher(
                 stringRedisTemplate,
                 droppedEventsCounter,
-                "click-events"
+                "click-events",
+                100_000
         );
     }
 
     @Test
     void shouldPublishClickEventToRedisStream() {
         ClickEventMessage eventMessage = sampleEventMessage();
-        when(streamOperations.add(any())).thenReturn(mock(RecordId.class));
+        when(streamOperations.add(any(), any(RedisStreamCommands.XAddOptions.class)))
+                .thenReturn(mock(RecordId.class));
 
         clickEventPublisher.publish(eventMessage);
 
-        verify(streamOperations).add(any());
+        ArgumentCaptor<RedisStreamCommands.XAddOptions> optionsCaptor =
+                ArgumentCaptor.forClass(RedisStreamCommands.XAddOptions.class);
+        verify(streamOperations).add(any(), optionsCaptor.capture());
+        RedisStreamCommands.XAddOptions xAddOptions = optionsCaptor.getValue();
+        org.junit.jupiter.api.Assertions.assertEquals(100_000L, xAddOptions.getMaxlen());
+        org.junit.jupiter.api.Assertions.assertTrue(xAddOptions.isApproximateTrimming());
         assertEquals(0.0, droppedEventsCounter().count());
     }
 
     @Test
     void shouldIncrementDroppedMetricWhenPublishFails() {
         ClickEventMessage eventMessage = sampleEventMessage();
-        when(streamOperations.add(any())).thenThrow(new RuntimeException("Redis unavailable"));
+        when(streamOperations.add(any(), any(RedisStreamCommands.XAddOptions.class)))
+                .thenThrow(new RuntimeException("Redis unavailable"));
 
         assertDoesNotThrow(() -> clickEventPublisher.publish(eventMessage));
         assertEquals(1.0, droppedEventsCounter().count());

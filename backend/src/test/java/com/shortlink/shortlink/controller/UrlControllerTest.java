@@ -1,9 +1,12 @@
 package com.shortlink.shortlink.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.shortlink.shortlink.config.RateLimitInterceptor;
 import com.shortlink.shortlink.dto.CreateUrlRequest;
 import com.shortlink.shortlink.exception.GlobalExceptionHandler;
 import com.shortlink.shortlink.model.Url;
+import com.shortlink.shortlink.security.CurrentUserService;
+import com.shortlink.shortlink.service.RateLimitService;
 import com.shortlink.shortlink.service.UrlShorteningService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,8 +22,11 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -33,18 +39,36 @@ class UrlControllerTest {
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private MockMvc mockMvc;
     private UrlShorteningService urlShorteningService;
+    private RateLimitService rateLimitService;
+    private CurrentUserService currentUserService;
+    private UUID currentUserId;
 
     @BeforeEach
     void setUp() {
         urlShorteningService = mock(UrlShorteningService.class);
+        rateLimitService = mock(RateLimitService.class);
+        currentUserService = mock(CurrentUserService.class);
+        currentUserId = UUID.fromString("550e8400-e29b-41d4-a716-446655440099");
         UrlController urlController = new UrlController(urlShorteningService);
         LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
         validator.afterPropertiesSet();
+        when(currentUserService.getCurrentUserId()).thenReturn(currentUserId);
+        when(rateLimitService.checkRateLimit(anyString(), anyString(), any()))
+                .thenReturn(new RateLimitService.RateLimitDecision(true, 299, 0));
+        RateLimitInterceptor rateLimitInterceptor = new RateLimitInterceptor(
+                rateLimitService,
+                currentUserService,
+                120,
+                java.time.Duration.ofMinutes(1),
+                300,
+                java.time.Duration.ofMinutes(1)
+        );
 
         mockMvc = MockMvcBuilders.standaloneSetup(urlController)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
                 .setValidator(validator)
+                .addInterceptors(rateLimitInterceptor)
                 .build();
     }
 
@@ -141,5 +165,25 @@ class UrlControllerTest {
                 .andExpect(jsonPath("$.content[0].shortCode").value("aB3xK7c"))
                 .andExpect(jsonPath("$.content[1].shortCode").value("dE4yP9m"))
                 .andExpect(jsonPath("$.totalElements").value(2));
+
+        verify(rateLimitService).checkRateLimit(eq("management"), eq("user:" + currentUserId), any());
+    }
+
+    @Test
+    void shouldReturnTooManyRequestsForManagementEndpoints() throws Exception {
+        when(rateLimitService.checkRateLimit(anyString(), anyString(), any()))
+                .thenReturn(new RateLimitService.RateLimitDecision(false, 0, 7));
+
+        mockMvc.perform(get("/api/v1/urls"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.error").value("RATE_LIMITED"))
+                .andExpect(jsonPath("$.path").value("/api/v1/urls"))
+                .andExpect(jsonPath("$.status").value(429))
+                .andExpect(jsonPath("$.message").value("Rate limit exceeded. Please retry later."))
+                .andExpect(jsonPath("$.timestamp").exists())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Retry-After", "7"));
+
+        verify(currentUserService).getCurrentUserId();
+        verify(rateLimitService).checkRateLimit(eq("management"), eq("user:" + currentUserId), any());
     }
 }

@@ -58,5 +58,11 @@ app:
     max-retries: 3
   rate-limit:
     key-prefix: rate-limit
+    public:
+      capacity: 120
+      refill-period: 1m
+    management:
+      capacity: 300
+      refill-period: 1m
   geoip:
     database-path: ${GEOIP_DB_PATH:}

@@ -100,6 +100,14 @@ class UrlCrudIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void shouldRejectInvalidBearerTokenForUrlManagementEndpoints() throws Exception {
+        mockMvc.perform(get("/api/v1/urls")
+                        .header("Authorization", bearer("not-a-real-jwt")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error", is("UNAUTHORIZED")));
+    }
+
+    @Test
     void shouldHideUrlsOwnedByAnotherUser() throws Exception {
         mockMvc.perform(post("/api/v1/urls")
                         .header("Authorization", bearer(ownerAccessToken))

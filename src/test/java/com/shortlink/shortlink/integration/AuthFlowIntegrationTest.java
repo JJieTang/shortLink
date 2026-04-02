@@ -2,6 +2,7 @@ package com.shortlink.shortlink.integration;
 
 import com.shortlink.shortlink.model.RefreshToken;
 import com.shortlink.shortlink.repository.RefreshTokenRepository;
+import com.shortlink.shortlink.repository.UrlRepository;
 import com.shortlink.shortlink.repository.UserRepository;
 import com.shortlink.shortlink.security.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +18,7 @@ import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.blankOrNullString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -38,8 +40,12 @@ class AuthFlowIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private JwtTokenProvider jwtTokenProvider;
 
+    @Autowired
+    private UrlRepository urlRepository;
+
     @BeforeEach
     void setUp() {
+        urlRepository.deleteAll();
         userRepository.findByEmail(USER_EMAIL).ifPresent(userRepository::delete);
         refreshTokenRepository.deleteAll();
     }
@@ -76,11 +82,29 @@ class AuthFlowIntegrationTest extends AbstractIntegrationTest {
                 .getContentAsString();
 
         String originalRefreshToken = com.jayway.jsonpath.JsonPath.read(loginResponse, "$.refreshToken");
+        String accessToken = com.jayway.jsonpath.JsonPath.read(loginResponse, "$.accessToken");
         String originalRefreshTokenHash = jwtTokenProvider.hashToken(originalRefreshToken);
 
         Optional<RefreshToken> storedOriginalToken = refreshTokenRepository.findByTokenHash(originalRefreshTokenHash);
         assertFalse(storedOriginalToken.isEmpty());
         assertEquals(1L, refreshTokenRepository.count());
+
+        mockMvc.perform(post("/api/v1/urls")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalUrl": "https://example.com/owned",
+                                  "customAlias": "owned-link"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.shortCode").value("owned-link"));
+
+        mockMvc.perform(get("/api/v1/urls/owned-link")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.originalUrl").value("https://example.com/owned"));
 
         String refreshResponse = mockMvc.perform(post("/api/v1/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -47,13 +47,17 @@ abstract class AbstractIntegrationTest {
     }
 
     protected String issueAccessToken(String email, String name) {
+        return issueAccessToken(email, name, "USER");
+    }
+
+    protected String issueAccessToken(String email, String name, String role) {
         userRepository.findByEmail(email).ifPresent(userRepository::delete);
 
         User user = new User();
         user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode("SecretPass123"));
         user.setName(name);
-        user.setRole("USER");
+        user.setRole(role);
         user.setDailyQuota(100);
 
         User savedUser = userRepository.save(user);

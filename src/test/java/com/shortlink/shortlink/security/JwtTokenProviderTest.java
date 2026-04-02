@@ -69,4 +69,15 @@ class JwtTokenProviderTest {
         assertEquals(firstHash, secondHash);
         assertNotEquals(firstHash, jwtTokenProvider.hashToken("different.jwt.token"));
     }
+
+    @Test
+    void shouldRejectDefaultSecretOutsideDevProfile() {
+        assertThrows(IllegalStateException.class, () -> new JwtTokenProvider(
+                JwtTokenProvider.DEFAULT_DEV_SECRET,
+                "shortlink-test",
+                Duration.ofMinutes(15),
+                Duration.ofDays(7),
+                false
+        ));
+    }
 }

@@ -15,6 +15,8 @@ public interface UrlRepository extends JpaRepository<Url, UUID>, UrlBatchReposit
 
     Optional<Url> findByShortCodeAndIsActiveTrue(String shortCode);
 
+    Optional<Url> findByShortCodeAndUser_IdAndIsActiveTrue(String shortCode, UUID userId);
+
     boolean existsByShortCode(String shortCode);
 
     Page<Url> findByUser_IdAndIsActiveTrue(UUID userId, Pageable pageable);

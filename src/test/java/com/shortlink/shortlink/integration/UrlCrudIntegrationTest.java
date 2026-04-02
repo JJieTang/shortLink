@@ -1,14 +1,19 @@
 package com.shortlink.shortlink.integration;
 
+import com.shortlink.shortlink.model.User;
 import com.shortlink.shortlink.repository.UrlRepository;
+import com.shortlink.shortlink.repository.UserRepository;
+import com.shortlink.shortlink.security.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -18,20 +23,40 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class UrlCrudIntegrationTest extends AbstractIntegrationTest {
 
+    private static final String OWNER_EMAIL = "owner@example.com";
+    private static final String OTHER_EMAIL = "other@example.com";
+
     @Autowired
     private MockMvc mockMvc;
 
     @Autowired
     private UrlRepository urlRepository;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private JwtTokenProvider jwtTokenProvider;
+
+    private String ownerAccessToken;
+    private String otherAccessToken;
+
     @BeforeEach
     void setUp() {
         urlRepository.deleteAll();
+        userRepository.findByEmail(OWNER_EMAIL).ifPresent(userRepository::delete);
+        userRepository.findByEmail(OTHER_EMAIL).ifPresent(userRepository::delete);
+        ownerAccessToken = issueAccessToken(OWNER_EMAIL, "Owner");
+        otherAccessToken = issueAccessToken(OTHER_EMAIL, "Other User");
     }
 
     @Test
     void shouldCreateGetListAndDeleteUrls() throws Exception {
         mockMvc.perform(post("/api/v1/urls")
+                        .header("Authorization", bearer(ownerAccessToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -44,6 +69,7 @@ class UrlCrudIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.shortUrl").value("http://localhost:8080/first-link"));
 
         mockMvc.perform(post("/api/v1/urls")
+                        .header("Authorization", bearer(ownerAccessToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -54,12 +80,14 @@ class UrlCrudIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.shortCode").value("second-link"));
 
-        mockMvc.perform(get("/api/v1/urls/first-link"))
+        mockMvc.perform(get("/api/v1/urls/first-link")
+                        .header("Authorization", bearer(ownerAccessToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.shortCode").value("first-link"))
                 .andExpect(jsonPath("$.originalUrl").value("https://example.com/first"));
 
         mockMvc.perform(get("/api/v1/urls")
+                        .header("Authorization", bearer(ownerAccessToken))
                         .param("page", "0")
                         .param("size", "20")
                         .param("sort", "createdAt,desc"))
@@ -67,11 +95,55 @@ class UrlCrudIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.content", hasSize(2)))
                 .andExpect(jsonPath("$.totalElements").value(2));
 
-        mockMvc.perform(delete("/api/v1/urls/first-link"))
+        mockMvc.perform(delete("/api/v1/urls/first-link")
+                        .header("Authorization", bearer(ownerAccessToken)))
                 .andExpect(status().isNoContent());
 
-        mockMvc.perform(get("/api/v1/urls/first-link"))
+        mockMvc.perform(get("/api/v1/urls/first-link")
+                        .header("Authorization", bearer(ownerAccessToken)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error").value("NOT_FOUND"));
+    }
+
+    @Test
+    void shouldRequireAuthenticationForUrlManagementEndpoints() throws Exception {
+        mockMvc.perform(get("/api/v1/urls"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error", is("UNAUTHORIZED")));
+    }
+
+    @Test
+    void shouldHideUrlsOwnedByAnotherUser() throws Exception {
+        mockMvc.perform(post("/api/v1/urls")
+                        .header("Authorization", bearer(ownerAccessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalUrl": "https://example.com/private",
+                                  "customAlias": "private-link"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/urls/private-link")
+                        .header("Authorization", bearer(otherAccessToken)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("NOT_FOUND"));
+    }
+
+    private String issueAccessToken(String email, String name) {
+        User user = new User();
+        user.setEmail(email);
+        user.setPasswordHash(passwordEncoder.encode("SecretPass123"));
+        user.setName(name);
+        user.setRole("USER");
+        user.setDailyQuota(100);
+
+        User savedUser = userRepository.save(user);
+        return jwtTokenProvider.generateAccessToken(savedUser.getId(), savedUser.getEmail(), savedUser.getRole());
+    }
+
+    private String bearer(String accessToken) {
+        return "Bearer " + accessToken;
     }
 }

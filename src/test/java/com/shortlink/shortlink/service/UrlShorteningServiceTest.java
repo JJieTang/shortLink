@@ -8,7 +8,7 @@ import com.shortlink.shortlink.exception.ShortCodeGenerationException;
 import com.shortlink.shortlink.model.Url;
 import com.shortlink.shortlink.model.User;
 import com.shortlink.shortlink.repository.UrlRepository;
-import com.shortlink.shortlink.repository.UserRepository;
+import com.shortlink.shortlink.security.CurrentUserService;
 import com.shortlink.shortlink.util.Base62Encoder;
 import com.shortlink.shortlink.util.ReservedWords;
 import com.shortlink.shortlink.util.UrlValidator;
@@ -38,7 +38,7 @@ class UrlShorteningServiceTest {
 
     private Base62Encoder base62Encoder;
     private UrlRepository urlRepository;
-    private UserRepository userRepository;
+    private CurrentUserService currentUserService;
     private UrlCacheService urlCacheService;
     private SimpleMeterRegistry meterRegistry;
     private UrlShorteningService urlShorteningService;
@@ -47,14 +47,14 @@ class UrlShorteningServiceTest {
     void setUp() {
         base62Encoder = mock(Base62Encoder.class);
         urlRepository = mock(UrlRepository.class);
-        userRepository = mock(UserRepository.class);
+        currentUserService = mock(CurrentUserService.class);
         urlCacheService = mock(UrlCacheService.class);
         meterRegistry = new SimpleMeterRegistry();
         Counter urlsCreatedCounter = meterRegistry.counter("shortlink_urls_created_total");
         urlShorteningService = new UrlShorteningService(
                 base62Encoder,
                 urlRepository,
-                userRepository,
+                currentUserService,
                 new UrlValidator(),
                 new ReservedWords(),
                 urlCacheService,
@@ -66,11 +66,11 @@ class UrlShorteningServiceTest {
     @Test
     void shouldCreateShortUrlWithGeneratedCode() {
         User user = new User();
-        user.setId(UrlShorteningService.SEED_USER_ID);
+        user.setId(java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000"));
 
         when(base62Encoder.generateRandomCode()).thenReturn("abc1234");
         when(urlRepository.existsByShortCode("abc1234")).thenReturn(false);
-        when(userRepository.findById(UrlShorteningService.SEED_USER_ID)).thenReturn(Optional.of(user));
+        when(currentUserService.getCurrentUser()).thenReturn(user);
         when(urlRepository.save(any(Url.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Url created = urlShorteningService.createShortUrl(
@@ -131,7 +131,11 @@ class UrlShorteningServiceTest {
     void shouldSoftDeleteUrl() {
         Url url = new Url();
         url.setActive(true);
-        when(urlRepository.findByShortCodeAndIsActiveTrue("abc1234")).thenReturn(Optional.of(url));
+        when(currentUserService.getCurrentUserId()).thenReturn(java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000"));
+        when(urlRepository.findByShortCodeAndUser_IdAndIsActiveTrue(
+                "abc1234",
+                java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000")
+        )).thenReturn(Optional.of(url));
 
         urlShorteningService.deleteUrl("abc1234");
 
@@ -140,7 +144,7 @@ class UrlShorteningServiceTest {
     }
 
     @Test
-    void shouldListUrlsForSeedUser() {
+    void shouldListUrlsForCurrentUser() {
         Url first = new Url();
         first.setShortCode("abc1234");
         Url second = new Url();
@@ -148,13 +152,15 @@ class UrlShorteningServiceTest {
 
         PageRequest pageable = PageRequest.of(0, 2);
         Page<Url> page = new PageImpl<>(List.of(first, second), pageable, 2);
-        when(urlRepository.findByUser_IdAndIsActiveTrue(UrlShorteningService.SEED_USER_ID, pageable)).thenReturn(page);
+        java.util.UUID currentUserId = java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+        when(currentUserService.getCurrentUserId()).thenReturn(currentUserId);
+        when(urlRepository.findByUser_IdAndIsActiveTrue(currentUserId, pageable)).thenReturn(page);
 
         Page<Url> result = urlShorteningService.listUrls(pageable);
 
         assertEquals(2, result.getContent().size());
         assertEquals("abc1234", result.getContent().get(0).getShortCode());
         assertEquals("def5678", result.getContent().get(1).getShortCode());
-        verify(urlRepository).findByUser_IdAndIsActiveTrue(UrlShorteningService.SEED_USER_ID, pageable);
+        verify(urlRepository).findByUser_IdAndIsActiveTrue(currentUserId, pageable);
     }
 }

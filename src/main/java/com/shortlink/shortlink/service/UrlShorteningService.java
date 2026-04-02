@@ -4,7 +4,7 @@ import com.shortlink.shortlink.dto.CreateUrlRequest;
 import com.shortlink.shortlink.model.Url;
 import com.shortlink.shortlink.model.User;
 import com.shortlink.shortlink.repository.UrlRepository;
-import com.shortlink.shortlink.repository.UserRepository;
+import com.shortlink.shortlink.security.CurrentUserService;
 import com.shortlink.shortlink.util.Base62Encoder;
 import com.shortlink.shortlink.util.ReservedWords;
 import com.shortlink.shortlink.util.UrlValidator;
@@ -22,18 +22,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.UUID;
 
 @Service
 public class UrlShorteningService {
 
-    // TODO: Phase 3 删除，替换为 SecurityContext 获取当前用户
-    static final UUID SEED_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final String CUSTOM_ALIAS_PATTERN = "^[A-Za-z0-9_-]{3,30}$";
 
     private final Base62Encoder base62Encoder;
     private final UrlRepository urlRepository;
-    private final UserRepository userRepository;
+    private final CurrentUserService currentUserService;
     private final UrlValidator urlValidator;
     private final ReservedWords reservedWords;
     private final UrlCacheService urlCacheService;
@@ -43,7 +40,7 @@ public class UrlShorteningService {
     public UrlShorteningService(
             Base62Encoder base62Encoder,
             UrlRepository urlRepository,
-            UserRepository userRepository,
+            CurrentUserService currentUserService,
             UrlValidator urlValidator,
             ReservedWords reservedWords,
             UrlCacheService urlCacheService,
@@ -51,7 +48,7 @@ public class UrlShorteningService {
             @Value("${app.base-url:http://localhost:8080}") String baseUrl) {
         this.base62Encoder = base62Encoder;
         this.urlRepository = urlRepository;
-        this.userRepository = userRepository;
+        this.currentUserService = currentUserService;
         this.urlValidator = urlValidator;
         this.reservedWords = reservedWords;
         this.urlCacheService = urlCacheService;
@@ -66,8 +63,7 @@ public class UrlShorteningService {
 
         String shortCode = resolveShortCode(request.customAlias());
 
-        User user = userRepository.findById(SEED_USER_ID).orElseThrow(
-                () -> new ResourceNotFoundException("Seed user not found."));
+        User user = currentUserService.getCurrentUser();
 
         Url url = new Url();
         url.setShortCode(shortCode);
@@ -85,7 +81,7 @@ public class UrlShorteningService {
 
     @Transactional(readOnly = true)
     public Url getUrl(String shortCode) {
-        return urlRepository.findByShortCodeAndIsActiveTrue(shortCode).orElseThrow(
+        return urlRepository.findByShortCodeAndUser_IdAndIsActiveTrue(shortCode, currentUserService.getCurrentUserId()).orElseThrow(
                 () -> new ResourceNotFoundException("Short code not found: " + shortCode));
     }
 
@@ -98,7 +94,7 @@ public class UrlShorteningService {
 
     @Transactional(readOnly = true)
     public Page<Url> listUrls(Pageable pageable) {
-        return urlRepository.findByUser_IdAndIsActiveTrue(SEED_USER_ID, pageable);
+        return urlRepository.findByUser_IdAndIsActiveTrue(currentUserService.getCurrentUserId(), pageable);
     }
 
     public String getBaseUrl(){

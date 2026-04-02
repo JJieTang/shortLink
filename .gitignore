@@ -45,6 +45,11 @@ out/
 .env
 .env.*
 
+### Frontend Build Output ###
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
 ### GeoIP Databases ###
 *.mmdb
 infra/geoip/

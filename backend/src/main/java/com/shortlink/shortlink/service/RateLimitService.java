@@ -3,6 +3,7 @@ package com.shortlink.shortlink.service;
 import io.micrometer.core.instrument.Counter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -27,6 +28,7 @@ public class RateLimitService {
     private final String keyPrefix;
     private final Clock clock;
 
+    @Autowired
     public RateLimitService(
             StringRedisTemplate stringRedisTemplate,
             @Qualifier("rateLimitedCounter") Counter rateLimitedCounter,

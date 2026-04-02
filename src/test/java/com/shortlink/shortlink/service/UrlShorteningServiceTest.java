@@ -70,7 +70,7 @@ class UrlShorteningServiceTest {
 
         when(base62Encoder.generateRandomCode()).thenReturn("abc1234");
         when(urlRepository.existsByShortCode("abc1234")).thenReturn(false);
-        when(currentUserService.getCurrentUser()).thenReturn(user);
+        when(currentUserService.getCurrentUserReference()).thenReturn(user);
         when(urlRepository.save(any(Url.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Url created = urlShorteningService.createShortUrl(

@@ -46,6 +46,7 @@ app:
     secret: ${JWT_SECRET:replace-this-dev-secret-with-at-least-32-characters}
     access-token-ttl: 15m
     refresh-token-ttl: 7d
+    cleanup-interval: 6h
   click-stream:
     stream-key: click-events
     dlq-stream-key: click-events-dlq

@@ -23,6 +23,8 @@ import java.util.UUID;
 @Service
 public class AuthService {
 
+    private static final String DUMMY_PASSWORD_HASH = "$2a$10$7M0s0h4A6bQ8S5bF2d0a9u9Q6kVQ2nV3g6fY0F3gM2sR9xV0z8K7W";
+
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
@@ -60,8 +62,12 @@ public class AuthService {
     @Transactional
     public AuthResponse login(LoginRequest request) {
         String normalizedEmail = normalizeEmail(request.email());
-        User user = userRepository.findByEmail(normalizedEmail)
-                .orElseThrow(() -> new AuthenticationFailedException("Invalid email or password"));
+        User user = userRepository.findByEmail(normalizedEmail).orElse(null);
+
+        if (user == null) {
+            passwordEncoder.matches(request.password(), DUMMY_PASSWORD_HASH);
+            throw new AuthenticationFailedException("Invalid email or password");
+        }
 
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new AuthenticationFailedException("Invalid email or password");

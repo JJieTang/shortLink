@@ -63,7 +63,7 @@ public class UrlShorteningService {
 
         String shortCode = resolveShortCode(request.customAlias());
 
-        User user = currentUserService.getCurrentUser();
+        User user = currentUserService.getCurrentUserReference();
 
         Url url = new Url();
         url.setShortCode(shortCode);

@@ -161,4 +161,20 @@ class AuthFlowIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("AUTHENTICATION_FAILED"));
     }
+
+    @Test
+    void shouldRejectRegisterWithWeakPassword() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "auth-flow@example.com",
+                                  "password": "weakpass",
+                                  "name": "Auth Flow"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("password must contain at least one uppercase letter and one digit"));
+    }
 }

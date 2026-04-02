@@ -5,6 +5,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 import java.util.List;
 
+// Spring Data picks up this custom repository fragment implementation by the `Impl` suffix.
 public class UrlRepositoryImpl implements UrlBatchRepository {
 
     private static final String INCREMENT_TOTAL_CLICKS_SQL = """

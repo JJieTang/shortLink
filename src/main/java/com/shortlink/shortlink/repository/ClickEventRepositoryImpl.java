@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+// Spring Data picks up this custom repository fragment implementation by the `Impl` suffix.
 public class ClickEventRepositoryImpl implements ClickEventBatchRepository {
 
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;

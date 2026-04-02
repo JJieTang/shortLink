@@ -15,6 +15,8 @@ import org.springframework.data.redis.connection.stream.PendingMessagesSummary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
+import java.time.Duration;
+
 @Configuration
 public class MetricsConfig {
 
@@ -32,6 +34,14 @@ public class MetricsConfig {
     public Timer redirectLatencyTimer(MeterRegistry meterRegistry) {
         return Timer.builder("shortlink_redirect_latency_seconds")
                 .description("Latency of successful short-link redirects")
+                .serviceLevelObjectives(
+                        Duration.ofMillis(1),
+                        Duration.ofMillis(5),
+                        Duration.ofMillis(10),
+                        Duration.ofMillis(50),
+                        Duration.ofMillis(100),
+                        Duration.ofMillis(500)
+                )
                 .register(meterRegistry);
     }
 

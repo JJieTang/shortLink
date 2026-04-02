@@ -31,6 +31,13 @@ management:
       application: ${spring.application.name}
 
 app:
+  async:
+    click-event:
+      core-pool-size: 2
+      max-pool-size: 4
+      queue-capacity: 200
+      thread-name-prefix: click-event-
+      await-termination-seconds: 10
   base-url: http://localhost:8080
   cache:
     url-ttl: 24h

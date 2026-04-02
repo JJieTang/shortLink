@@ -42,6 +42,7 @@ public class RedirectController {
     public ResponseEntity<Void> redirect(@PathVariable String shortCode, HttpServletRequest request) {
         Timer.Sample sample = Timer.start();
         RedirectService.RedirectTarget redirectTarget = redirectService.resolveRedirectTarget(shortCode);
+        sample.stop(redirectLatencyTimer);
 
         clickEventPublisher.publish(new ClickEventMessage(
                 UUID.randomUUID(),
@@ -54,7 +55,6 @@ public class RedirectController {
                 resolveTraceId(request)
         ));
         redirectsCounter.increment();
-        sample.stop(redirectLatencyTimer);
 
         return ResponseEntity.status(HttpStatus.FOUND)
                 .header(HttpHeaders.LOCATION, URI.create(redirectTarget.originalUrl()).toString())

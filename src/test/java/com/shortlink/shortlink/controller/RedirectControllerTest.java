@@ -13,7 +13,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -62,13 +64,37 @@ class RedirectControllerTest {
                 .andExpect(header().string("Location", "https://example.com/landing"));
 
         verify(clickEventPublisher).publish(any());
-        org.junit.jupiter.api.Assertions.assertEquals(
+        assertEquals(
                 1.0,
                 meterRegistry.get("shortlink_redirects_total").counter().count()
         );
-        org.junit.jupiter.api.Assertions.assertEquals(
+        assertEquals(
                 1L,
                 meterRegistry.get("shortlink_redirect_latency_seconds").timer().count()
         );
+    }
+
+    @Test
+    void shouldStopRedirectLatencyTimerBeforePublishingClickEvent() throws Exception {
+        when(redirectService.resolveRedirectTarget("latency123")).thenReturn(
+                new RedirectService.RedirectTarget(
+                        UUID.fromString("550e8400-e29b-41d4-a716-446655440010"),
+                        "latency123",
+                        "https://example.com/latency"
+                )
+        );
+        doAnswer(invocation -> {
+            assertEquals(
+                    1L,
+                    meterRegistry.get("shortlink_redirect_latency_seconds").timer().count()
+            );
+            return null;
+        }).when(clickEventPublisher).publish(any());
+
+        mockMvc.perform(get("/latency123"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "https://example.com/latency"));
+
+        verify(clickEventPublisher).publish(any());
     }
 }

@@ -15,6 +15,12 @@ public interface UrlDailyStatRepository extends JpaRepository<UrlDailyStat, UrlD
 
     List<UrlDailyStat> findByIdUrlIdOrderByIdStatDateDesc(UUID urlId);
 
+    List<UrlDailyStat> findByIdUrlIdAndIdStatDateBetweenOrderByIdStatDateAsc(
+            UUID urlId,
+            LocalDate from,
+            LocalDate to
+    );
+
     @Modifying
     @Query(value = """
             INSERT INTO url_daily_stats (url_id, stat_date, click_count, unique_count)

@@ -4,6 +4,7 @@ import com.shortlink.shortlink.event.ClickEventMessage;
 import com.shortlink.shortlink.exception.ResourceNotFoundException;
 import com.shortlink.shortlink.model.ClickEvent;
 import com.shortlink.shortlink.model.Url;
+import com.shortlink.shortlink.repository.ClickEventBatchRepository;
 import com.shortlink.shortlink.repository.ClickEventRepository;
 import com.shortlink.shortlink.repository.UrlBatchRepository;
 import com.shortlink.shortlink.repository.UrlDailyStatBatchRepository;
@@ -64,6 +65,7 @@ class ClickEventConsumerTest {
         clickEventConsumer.consume(eventMessage);
 
         verify(urlRepository, never()).findAllById(any());
+        verify(clickEventRepository, never()).findExistingUniqueVisitors(any());
         verify(clickEventRepository, never()).save(any());
         verify(clickEventRepository, never()).saveAll(any());
         verify(urlDailyStatRepository, never()).upsertDailyCountsBatch(any());
@@ -82,12 +84,7 @@ class ClickEventConsumerTest {
         when(clickEventRepository.findExistingEventIdsByEventIdIn(List.of(eventMessage.eventId())))
                 .thenReturn(List.of());
         when(urlRepository.findAllById(any())).thenReturn(List.of(url));
-        when(clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
-                eq(eventMessage.urlId()),
-                eq(eventMessage.ipAddress()),
-                eq(Instant.parse("2026-03-31T00:00:00Z")),
-                eq(Instant.parse("2026-04-01T00:00:00Z"))
-        )).thenReturn(false);
+        when(clickEventRepository.findExistingUniqueVisitors(any())).thenReturn(List.of());
         when(userAgentParser.parse(eventMessage.userAgent())).thenReturn(
                 new UserAgentParser.ParsedUserAgent("desktop", "Mac OS X", "Chrome")
         );
@@ -152,12 +149,13 @@ class ClickEventConsumerTest {
         when(clickEventRepository.findExistingEventIdsByEventIdIn(List.of(eventMessage.eventId())))
                 .thenReturn(List.of());
         when(urlRepository.findAllById(any())).thenReturn(List.of(url));
-        when(clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
-                eq(eventMessage.urlId()),
-                eq(eventMessage.ipAddress()),
-                eq(Instant.parse("2026-03-31T00:00:00Z")),
-                eq(Instant.parse("2026-04-01T00:00:00Z"))
-        )).thenReturn(true);
+        when(clickEventRepository.findExistingUniqueVisitors(any())).thenReturn(List.of(
+                new ClickEventBatchRepository.ExistingUniqueVisitor(
+                        eventMessage.urlId(),
+                        LocalDate.of(2026, 3, 31),
+                        eventMessage.ipAddress()
+                )
+        ));
         when(userAgentParser.parse(eventMessage.userAgent())).thenReturn(
                 new UserAgentParser.ParsedUserAgent("desktop", "Mac OS X", "Chrome")
         );
@@ -187,6 +185,7 @@ class ClickEventConsumerTest {
 
         when(clickEventRepository.findExistingEventIdsByEventIdIn(List.of(eventMessage.eventId())))
                 .thenReturn(List.of());
+        when(clickEventRepository.findExistingUniqueVisitors(any())).thenReturn(List.of());
         when(urlRepository.findAllById(any())).thenReturn(List.of());
 
         assertThrows(ResourceNotFoundException.class, () -> clickEventConsumer.consume(eventMessage));
@@ -230,18 +229,7 @@ class ClickEventConsumerTest {
         when(clickEventRepository.findExistingEventIdsByEventIdIn(List.of(first.eventId(), second.eventId())))
                 .thenReturn(List.of());
         when(urlRepository.findAllById(any())).thenReturn(List.of(firstUrl, secondUrl));
-        when(clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
-                eq(first.urlId()),
-                eq(first.ipAddress()),
-                eq(Instant.parse("2026-03-31T00:00:00Z")),
-                eq(Instant.parse("2026-04-01T00:00:00Z"))
-        )).thenReturn(false);
-        when(clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
-                eq(second.urlId()),
-                eq(second.ipAddress()),
-                eq(Instant.parse("2026-03-31T00:00:00Z")),
-                eq(Instant.parse("2026-04-01T00:00:00Z"))
-        )).thenReturn(false);
+        when(clickEventRepository.findExistingUniqueVisitors(any())).thenReturn(List.of());
         when(userAgentParser.parse(any())).thenReturn(
                 new UserAgentParser.ParsedUserAgent("desktop", "Mac OS X", "Chrome")
         );
@@ -252,6 +240,7 @@ class ClickEventConsumerTest {
         clickEventConsumer.consumeBatch(List.of(first, duplicate, second));
 
         verify(clickEventRepository).findExistingEventIdsByEventIdIn(List.of(first.eventId(), second.eventId()));
+        verify(clickEventRepository).findExistingUniqueVisitors(any());
         verify(urlRepository).findAllById(any());
         ArgumentCaptor<Iterable<ClickEvent>> clickEventsCaptor = ArgumentCaptor.forClass(Iterable.class);
         verify(clickEventRepository).saveAll(clickEventsCaptor.capture());
@@ -283,18 +272,7 @@ class ClickEventConsumerTest {
         when(clickEventRepository.findExistingEventIdsByEventIdIn(List.of(first.eventId(), second.eventId())))
                 .thenReturn(List.of());
         when(urlRepository.findAllById(any())).thenReturn(List.of(url));
-        when(clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
-                eq(first.urlId()),
-                eq(first.ipAddress()),
-                eq(Instant.parse("2026-03-31T00:00:00Z")),
-                eq(Instant.parse("2026-04-01T00:00:00Z"))
-        )).thenReturn(false);
-        when(clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
-                eq(second.urlId()),
-                eq(second.ipAddress()),
-                eq(Instant.parse("2026-03-31T00:00:00Z")),
-                eq(Instant.parse("2026-04-01T00:00:00Z"))
-        )).thenReturn(false);
+        when(clickEventRepository.findExistingUniqueVisitors(any())).thenReturn(List.of());
         when(userAgentParser.parse(any())).thenReturn(
                 new UserAgentParser.ParsedUserAgent("desktop", "Mac OS X", "Chrome")
         );

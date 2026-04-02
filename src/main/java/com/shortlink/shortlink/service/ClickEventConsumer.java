@@ -4,6 +4,7 @@ import com.shortlink.shortlink.event.ClickEventMessage;
 import com.shortlink.shortlink.exception.ResourceNotFoundException;
 import com.shortlink.shortlink.model.ClickEvent;
 import com.shortlink.shortlink.model.Url;
+import com.shortlink.shortlink.repository.ClickEventBatchRepository;
 import com.shortlink.shortlink.repository.ClickEventRepository;
 import com.shortlink.shortlink.repository.UrlBatchRepository;
 import com.shortlink.shortlink.repository.UrlDailyStatBatchRepository;
@@ -18,6 +19,7 @@ import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -68,14 +70,20 @@ public class ClickEventConsumer {
         }
 
         Map<UUID, Url> urlsById = findUrlsById(pendingMessages);
-        Map<UniqueVisitorKey, Long> uniqueIncrementCache = new LinkedHashMap<>();
+        Set<UniqueVisitorKey> existingUniqueVisitors = findExistingUniqueVisitors(pendingMessages);
+        Set<UniqueVisitorKey> countedUniqueVisitorsInBatch = new LinkedHashSet<>();
         List<ClickEvent> clickEvents = new ArrayList<>();
         Map<DailyStatKey, DailyCounts> dailyCountsByKey = new LinkedHashMap<>();
         Map<UUID, Long> totalClicksByUrlId = new LinkedHashMap<>();
 
         for (ClickEventMessage eventMessage : pendingMessages) {
             LocalDate statDate = resolveStatDate(eventMessage);
-            long uniqueIncrement = resolveUniqueIncrement(eventMessage, statDate, uniqueIncrementCache);
+            long uniqueIncrement = resolveUniqueIncrement(
+                    eventMessage,
+                    statDate,
+                    existingUniqueVisitors,
+                    countedUniqueVisitorsInBatch
+            );
             Url url = requireUrl(urlsById, eventMessage.urlId());
 
             clickEvents.add(toClickEvent(eventMessage, url));
@@ -161,6 +169,41 @@ public class ClickEventConsumer {
                 .collect(Collectors.toMap(Url::getId, url -> url));
     }
 
+    private Set<UniqueVisitorKey> findExistingUniqueVisitors(Collection<ClickEventMessage> eventMessages) {
+        Map<UniqueVisitorKey, ClickEventBatchRepository.UniqueVisitorCandidate> candidatesByKey = new LinkedHashMap<>();
+
+        for (ClickEventMessage eventMessage : eventMessages) {
+            String ipAddress = eventMessage.ipAddress();
+            if (ipAddress == null || ipAddress.isBlank()) {
+                continue;
+            }
+
+            LocalDate statDate = resolveStatDate(eventMessage);
+            Instant startInclusive = statDate.atStartOfDay().toInstant(ZoneOffset.UTC);
+            Instant endExclusive = statDate.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+            UniqueVisitorKey uniqueVisitorKey = new UniqueVisitorKey(eventMessage.urlId(), statDate, ipAddress);
+
+            candidatesByKey.putIfAbsent(
+                    uniqueVisitorKey,
+                    new ClickEventBatchRepository.UniqueVisitorCandidate(
+                            eventMessage.urlId(),
+                            statDate,
+                            ipAddress,
+                            startInclusive,
+                            endExclusive
+                    )
+            );
+        }
+
+        return clickEventRepository.findExistingUniqueVisitors(List.copyOf(candidatesByKey.values())).stream()
+                .map(existingVisitor -> new UniqueVisitorKey(
+                        existingVisitor.urlId(),
+                        existingVisitor.statDate(),
+                        existingVisitor.ipAddress()
+                ))
+                .collect(Collectors.toSet());
+    }
+
     private LocalDate resolveStatDate(ClickEventMessage eventMessage) {
         return LocalDate.ofInstant(eventMessage.clickedAt(), ZoneOffset.UTC);
     }
@@ -168,29 +211,19 @@ public class ClickEventConsumer {
     private long resolveUniqueIncrement(
             ClickEventMessage eventMessage,
             LocalDate statDate,
-            Map<UniqueVisitorKey, Long> uniqueIncrementCache) {
+            Set<UniqueVisitorKey> existingUniqueVisitors,
+            Set<UniqueVisitorKey> countedUniqueVisitorsInBatch) {
         String ipAddress = eventMessage.ipAddress();
         if (ipAddress == null || ipAddress.isBlank()) {
             return 0;
         }
 
         UniqueVisitorKey uniqueVisitorKey = new UniqueVisitorKey(eventMessage.urlId(), statDate, ipAddress);
-        if (uniqueIncrementCache.containsKey(uniqueVisitorKey)) {
+        if (existingUniqueVisitors.contains(uniqueVisitorKey)) {
             return 0;
         }
 
-        Instant startInclusive = statDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-        Instant endExclusive = statDate.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
-
-        long uniqueIncrement = clickEventRepository.existsByUrl_IdAndIpAddressAndClickedAtGreaterThanEqualAndClickedAtLessThan(
-                eventMessage.urlId(),
-                ipAddress,
-                startInclusive,
-                endExclusive
-        ) ? 0 : 1;
-
-        uniqueIncrementCache.put(uniqueVisitorKey, uniqueIncrement);
-        return uniqueIncrement;
+        return countedUniqueVisitorsInBatch.add(uniqueVisitorKey) ? 1 : 0;
     }
 
     private record DailyStatKey(UUID urlId, LocalDate statDate) {

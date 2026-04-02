@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface ClickEventRepository extends JpaRepository<ClickEvent, UUID> {
+public interface ClickEventRepository extends JpaRepository<ClickEvent, UUID>, ClickEventBatchRepository {
 
     boolean existsByEventId(UUID eventId);
 

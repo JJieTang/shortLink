@@ -49,6 +49,7 @@ out/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/*.tsbuildinfo
 
 ### GeoIP Databases ###
 *.mmdb

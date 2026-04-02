@@ -1,18 +1,17 @@
 # Frontend Workspace
 
-This directory is reserved for the React SPA described in the ShortLink architecture documents.
+This workspace contains the React SPA for ShortLink.
 
-Suggested structure:
+Current status:
 
-```text
-frontend/
-├── src/
-│   ├── api/
-│   ├── components/
-│   ├── hooks/
-│   ├── pages/
-│   └── types/
-└── README.md
+- Vite + React + TypeScript app shell is set up
+- Tailwind CSS is configured
+- Shared API client and auth session helpers are available
+- Placeholder routes exist for auth, links, analytics, and not-found pages
+
+Install and run locally:
+
+```bash
+npm install
+npm run dev
 ```
-
-No frontend application code has been moved here yet. This commit only establishes the repository layout.

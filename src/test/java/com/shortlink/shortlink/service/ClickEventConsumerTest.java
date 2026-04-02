@@ -299,6 +299,47 @@ class ClickEventConsumerTest {
         ));
     }
 
+    @Test
+    void shouldCacheUserAgentAndGeoLookupsWithinBatch() {
+        ClickEventMessage first = sampleEventMessage();
+        ClickEventMessage second = new ClickEventMessage(
+                UUID.fromString("550e8400-e29b-41d4-a716-446655440098"),
+                first.urlId(),
+                first.shortCode(),
+                Instant.parse("2026-03-31T12:05:00Z"),
+                first.ipAddress(),
+                "https://example.com/ref-2",
+                first.userAgent(),
+                "trace-789"
+        );
+
+        Url url = new Url();
+        url.setId(first.urlId());
+
+        when(clickEventRepository.findExistingEventIdsByEventIdIn(List.of(first.eventId(), second.eventId())))
+                .thenReturn(List.of());
+        when(urlRepository.findAllById(any())).thenReturn(List.of(url));
+        when(clickEventRepository.findExistingUniqueVisitors(any())).thenReturn(List.of());
+        when(userAgentParser.parse(first.userAgent())).thenReturn(
+                new UserAgentParser.ParsedUserAgent("desktop", "Mac OS X", "Chrome")
+        );
+        when(geoLookupService.lookup(first.ipAddress())).thenReturn(
+                new GeoLookupService.GeoLocation("CH", "Zurich")
+        );
+
+        clickEventConsumer.consumeBatch(List.of(first, second));
+
+        verify(userAgentParser, times(1)).parse(first.userAgent());
+        verify(geoLookupService, times(1)).lookup(first.ipAddress());
+        verify(urlDailyStatRepository).upsertDailyCountsBatch(argThatDailyCountUpdates(updates ->
+                updates.size() == 1
+                        && updates.getFirst().urlId().equals(first.urlId())
+                        && updates.getFirst().statDate().equals(LocalDate.of(2026, 3, 31))
+                        && updates.getFirst().clickCount() == 2
+                        && updates.getFirst().uniqueCount() == 1
+        ));
+    }
+
     private ClickEventMessage sampleEventMessage() {
         return new ClickEventMessage(
                 UUID.fromString("550e8400-e29b-41d4-a716-446655440000"),

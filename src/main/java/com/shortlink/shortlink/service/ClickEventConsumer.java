@@ -72,6 +72,8 @@ public class ClickEventConsumer {
         Map<UUID, Url> urlsById = findUrlsById(pendingMessages);
         Set<UniqueVisitorKey> existingUniqueVisitors = findExistingUniqueVisitors(pendingMessages);
         Set<UniqueVisitorKey> countedUniqueVisitorsInBatch = new LinkedHashSet<>();
+        Map<String, UserAgentParser.ParsedUserAgent> parsedUserAgentsByRawValue = new LinkedHashMap<>();
+        Map<String, GeoLookupService.GeoLocation> geoLocationsByIpAddress = new LinkedHashMap<>();
         List<ClickEvent> clickEvents = new ArrayList<>();
         Map<DailyStatKey, DailyCounts> dailyCountsByKey = new LinkedHashMap<>();
         Map<UUID, Long> totalClicksByUrlId = new LinkedHashMap<>();
@@ -86,7 +88,12 @@ public class ClickEventConsumer {
             );
             Url url = requireUrl(urlsById, eventMessage.urlId());
 
-            clickEvents.add(toClickEvent(eventMessage, url));
+            clickEvents.add(toClickEvent(
+                    eventMessage,
+                    url,
+                    parsedUserAgentsByRawValue,
+                    geoLocationsByIpAddress
+            ));
             dailyCountsByKey.merge(
                     new DailyStatKey(eventMessage.urlId(), statDate),
                     new DailyCounts(1L, uniqueIncrement),
@@ -123,9 +130,19 @@ public class ClickEventConsumer {
         return url;
     }
 
-    private ClickEvent toClickEvent(ClickEventMessage eventMessage, Url url) {
-        UserAgentParser.ParsedUserAgent parsedUserAgent = userAgentParser.parse(eventMessage.userAgent());
-        GeoLookupService.GeoLocation geoLocation = geoLookupService.lookup(eventMessage.ipAddress());
+    private ClickEvent toClickEvent(
+            ClickEventMessage eventMessage,
+            Url url,
+            Map<String, UserAgentParser.ParsedUserAgent> parsedUserAgentsByRawValue,
+            Map<String, GeoLookupService.GeoLocation> geoLocationsByIpAddress) {
+        UserAgentParser.ParsedUserAgent parsedUserAgent = resolveParsedUserAgent(
+                eventMessage.userAgent(),
+                parsedUserAgentsByRawValue
+        );
+        GeoLookupService.GeoLocation geoLocation = resolveGeoLocation(
+                eventMessage.ipAddress(),
+                geoLocationsByIpAddress
+        );
 
         ClickEvent clickEvent = new ClickEvent();
         clickEvent.setUrl(url);
@@ -142,6 +159,24 @@ public class ClickEventConsumer {
         clickEvent.setTraceId(eventMessage.traceId());
 
         return clickEvent;
+    }
+
+    private UserAgentParser.ParsedUserAgent resolveParsedUserAgent(
+            String rawUserAgent,
+            Map<String, UserAgentParser.ParsedUserAgent> parsedUserAgentsByRawValue) {
+        return parsedUserAgentsByRawValue.computeIfAbsent(rawUserAgent, userAgentParser::parse);
+    }
+
+    private GeoLookupService.GeoLocation resolveGeoLocation(
+            String ipAddress,
+            Map<String, GeoLookupService.GeoLocation> geoLocationsByIpAddress) {
+        if (geoLocationsByIpAddress.containsKey(ipAddress)) {
+            return geoLocationsByIpAddress.get(ipAddress);
+        }
+
+        GeoLookupService.GeoLocation geoLocation = geoLookupService.lookup(ipAddress);
+        geoLocationsByIpAddress.put(ipAddress, geoLocation);
+        return geoLocation;
     }
 
     private List<ClickEventMessage> deduplicateBatch(List<ClickEventMessage> eventMessages) {

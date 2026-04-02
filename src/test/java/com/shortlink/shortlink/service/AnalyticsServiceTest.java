@@ -48,6 +48,7 @@ class AnalyticsServiceTest {
         Url url = new Url();
         url.setId(urlId);
         url.setShortCode("aB3xK7");
+        url.setTotalClicks(1542L);
 
         UrlDailyStat firstDay = dailyStat(urlId, LocalDate.of(2026, 3, 24), 87L, 60L);
         UrlDailyStat secondDay = dailyStat(urlId, LocalDate.of(2026, 3, 25), 142L, 103L);
@@ -60,7 +61,8 @@ class AnalyticsServiceTest {
         AnalyticsResponse response = analyticsService.getAnalytics("aB3xK7", from, to);
 
         assertEquals("aB3xK7", response.shortCode());
-        assertEquals(229L, response.totalClicks());
+        assertEquals(1542L, response.totalClicks());
+        assertEquals(229L, response.periodClicks());
         assertEquals(163L, response.uniqueClicks());
         assertEquals(2, response.clicksByDate().size());
         assertEquals(LocalDate.of(2026, 3, 24), response.clicksByDate().get(0).date());

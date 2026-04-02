@@ -59,6 +59,8 @@ class AnalyticsIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isCreated());
 
         Url url = urlRepository.findByShortCodeAndIsActiveTrue("report-link").orElseThrow();
+        url.setTotalClicks(1542L);
+        urlRepository.save(url);
 
         urlDailyStatRepository.save(dailyStat(url.getId(), LocalDate.of(2026, 3, 24), 87L, 60L));
         urlDailyStatRepository.save(dailyStat(url.getId(), LocalDate.of(2026, 3, 25), 142L, 103L));
@@ -69,7 +71,8 @@ class AnalyticsIntegrationTest extends AbstractIntegrationTest {
                         .param("to", "2026-03-25"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.shortCode").value("report-link"))
-                .andExpect(jsonPath("$.totalClicks").value(229))
+                .andExpect(jsonPath("$.totalClicks").value(1542))
+                .andExpect(jsonPath("$.periodClicks").value(229))
                 .andExpect(jsonPath("$.uniqueClicks").value(163))
                 .andExpect(jsonPath("$.clicksByDate.length()").value(2))
                 .andExpect(jsonPath("$.clicksByDate[0].date").value("2026-03-24"))

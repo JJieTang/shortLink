@@ -40,7 +40,7 @@ public class AnalyticsService {
         List<UrlDailyStat> dailyStats = urlDailyStatRepository
                 .findByIdUrlIdAndIdStatDateBetweenOrderByIdStatDateAsc(url.getId(), from, to);
 
-        long totalClicks = dailyStats.stream()
+        long periodClicks = dailyStats.stream()
                 .mapToLong(UrlDailyStat::getClickCount)
                 .sum();
 
@@ -57,7 +57,8 @@ public class AnalyticsService {
 
         return new AnalyticsResponse(
                 url.getShortCode(),
-                totalClicks,
+                url.getTotalClicks() == null ? 0L : url.getTotalClicks(),
+                periodClicks,
                 uniqueClicks,
                 clicksByDate
         );

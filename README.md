@@ -2,17 +2,23 @@
 
 ShortLink is a URL shortener backend built to demonstrate production-minded backend engineering with Spring Boot.
 
-Current status: `Phase 2 completed`
+Current status: `Phase 3 completed`
 
-## What Phase 2 Delivers
+## What Phase 3 Delivers
 
+- Email/password registration and login
+- JWT-based access token authentication
+- Refresh token rotation with hashed persistence in PostgreSQL
 - Create short URLs with optional custom alias and expiration time
+- Per-user URL ownership for create, list, detail, delete, and analytics
 - Redirect short URLs with `302 Found`
 - Redis-backed redirect cache with cache-aside flow
 - Redis Streams click-event pipeline
 - Async click persistence into `click_events`
 - Daily aggregation into `url_daily_stats`
+- Date-range analytics API backed by `url_daily_stats`
 - Retry, DLQ, and replay flow for failed click events
+- Admin-only DLQ inspection and replay endpoints
 - Unified JSON error handling
 - Flyway-managed PostgreSQL schema
 
@@ -29,13 +35,39 @@ Current status: `Phase 2 completed`
 - Flyway
 - Maven
 - Testcontainers
+- Spring Security
+- JWT (JJWT)
 
 ## Core API
+
+### Register
+
+```bash
+curl -i -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "alice@example.com",
+    "password": "SecurePass1",
+    "name": "Alice"
+  }'
+```
+
+### Login
+
+```bash
+curl -i -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "alice@example.com",
+    "password": "SecurePass1"
+  }'
+```
 
 ### Create short URL
 
 ```bash
 curl -i -X POST http://localhost:8080/api/v1/urls \
+  -H "Authorization: Bearer <access-token>" \
   -H "Content-Type: application/json" \
   -d '{
     "originalUrl": "https://example.com/landing-page"
@@ -59,6 +91,7 @@ Location: https://example.com/landing-page
 
 ```bash
 curl -i -X POST http://localhost:8080/api/v1/admin/click-events/dlq/<message-id>/replay
+  -H "Authorization: Bearer <admin-access-token>"
 ```
 
 Expected:
@@ -70,7 +103,15 @@ HTTP/1.1 202 Accepted
 ### List DLQ messages
 
 ```bash
-curl -s http://localhost:8080/api/v1/admin/click-events/dlq
+curl -s http://localhost:8080/api/v1/admin/click-events/dlq \
+  -H "Authorization: Bearer <admin-access-token>"
+```
+
+### URL analytics
+
+```bash
+curl -s "http://localhost:8080/api/v1/urls/aB3xK7c/analytics?from=2026-03-20&to=2026-03-27" \
+  -H "Authorization: Bearer <access-token>"
 ```
 
 ## Example Response
@@ -105,11 +146,26 @@ curl -s http://localhost:8080/api/v1/admin/click-events/dlq
 - Random 7-character Base62 short codes
 - `302` is used instead of `301` so every click still reaches the service
 - URL validation blocks invalid schemes and private or local addresses
-- A seeded user is used temporarily until authentication is added in Phase 3
+- JWT is stateless for request authentication; refresh tokens are stored as hashes
+- URL ownership is enforced by authenticated user id instead of a seeded bootstrap user
 - `open-in-view: false` keeps persistence logic inside service boundaries
 - Structured JSON logging is configured with Logback
 - Redirect stays synchronous, analytics stay asynchronous
 - `url_daily_stats` is the authority for daily counts; `urls.total_clicks` is a read-optimized approximation
+
+## Security Notes
+
+- `/api/v1/auth/**`, `GET /{shortCode}`, and `/actuator/**` are public
+- `/api/v1/urls/**` requires a valid access token
+- `/api/v1/admin/**` requires `ADMIN`
+- Access tokens are short-lived JWTs
+- Refresh tokens are rotated on use and persisted as SHA-256 hashes
+
+## Known Limitations
+
+- Refresh token rotation does not yet implement reuse detection or token families
+- Today, if a stolen refresh token is used before the legitimate client refreshes, the attacker can obtain the next token pair and the legitimate client will later see a generic refresh failure
+- A production-hardening next step is to add a `family_id` and per-token lineage so refresh-token reuse can revoke the entire family, which is the OWASP-recommended approach
 
 ## Configuration
 
@@ -123,6 +179,7 @@ The application uses environment-variable-first configuration for local developm
 - `REDIS_HOST`
 - `REDIS_PORT`
 - `GEOIP_DB_PATH`
+- `JWT_SECRET`
 
 If these variables are not provided, local development defaults are used.
 

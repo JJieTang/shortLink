@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AnalyticsPage } from "@/pages/AnalyticsPage";
 import { AuthPage } from "@/pages/AuthPage";
 import { LinksPage } from "@/pages/LinksPage";
@@ -11,8 +12,10 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/links" replace />} />
         <Route path="/auth" element={<AuthPage />} />
-        <Route path="/links" element={<LinksPage />} />
-        <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="/links" element={<LinksPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
+        </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

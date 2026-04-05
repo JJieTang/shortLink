@@ -3,22 +3,34 @@ import { readAccessToken } from "./sessionStore";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
 
-export interface RequestOptions extends RequestInit {
+type JsonPrimitive = string | number | boolean | null;
+type JsonBody = JsonPrimitive | JsonPrimitive[] | object;
+
+export class MissingAccessTokenError extends Error {
+  constructor() {
+    super("Authenticated request requires a stored access token.");
+    this.name = "MissingAccessTokenError";
+  }
+}
+
+export interface RequestOptions extends Omit<RequestInit, "body"> {
   auth?: boolean;
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const headers = new Headers(options.headers);
+interface InternalRequestOptions extends RequestOptions {
+  body?: BodyInit | null;
+}
 
-  if (!headers.has("Content-Type") && options.body) {
-    headers.set("Content-Type", "application/json");
-  }
+async function request<T>(path: string, options: InternalRequestOptions = {}): Promise<T | undefined> {
+  const headers = new Headers(options.headers);
 
   if (options.auth) {
     const accessToken = readAccessToken();
-    if (accessToken) {
-      headers.set("Authorization", `Bearer ${accessToken}`);
+    if (!accessToken) {
+      throw new MissingAccessTokenError();
     }
+
+    headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
   const response = await fetch(new URL(path, API_BASE_URL), {
@@ -62,12 +74,23 @@ async function safeJson(response: Response) {
 export const httpClient = {
   get: <T>(path: string, options?: RequestOptions) =>
     request<T>(path, { ...options, method: "GET" }),
-  post: <T>(path: string, body?: unknown, options?: RequestOptions) =>
+  post: <T>(path: string, body?: JsonBody, options?: RequestOptions) =>
     request<T>(path, {
       ...options,
       method: "POST",
+      headers: withJsonContentType(options?.headers),
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
   delete: <T>(path: string, options?: RequestOptions) =>
     request<T>(path, { ...options, method: "DELETE" }),
 };
+
+function withJsonContentType(headers?: HeadersInit) {
+  const nextHeaders = new Headers(headers);
+
+  if (!nextHeaders.has("Content-Type")) {
+    nextHeaders.set("Content-Type", "application/json");
+  }
+
+  return nextHeaders;
+}

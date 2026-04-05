@@ -2,9 +2,13 @@ import { ApiError, type ApiErrorPayload } from "@/types/api";
 import { readAccessToken } from "./sessionStore";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS ?? 10000);
 
 type JsonPrimitive = string | number | boolean | null;
 type JsonBody = JsonPrimitive | JsonPrimitive[] | object;
+type UnauthorizedHandler = (error: ApiError) => void;
+
+let unauthorizedHandler: UnauthorizedHandler | null = null;
 
 export class MissingAccessTokenError extends Error {
   constructor() {
@@ -13,8 +17,21 @@ export class MissingAccessTokenError extends Error {
   }
 }
 
+export class RequestTimeoutError extends Error {
+  readonly path: string;
+  readonly timeoutMs: number;
+
+  constructor(path: string, timeoutMs: number) {
+    super(`Request to ${path} timed out after ${timeoutMs}ms.`);
+    this.name = "RequestTimeoutError";
+    this.path = path;
+    this.timeoutMs = timeoutMs;
+  }
+}
+
 export interface RequestOptions extends Omit<RequestInit, "body"> {
   auth?: boolean;
+  timeoutMs?: number;
 }
 
 interface InternalRequestOptions extends RequestOptions {
@@ -23,6 +40,10 @@ interface InternalRequestOptions extends RequestOptions {
 
 async function request<T>(path: string, options: InternalRequestOptions = {}): Promise<T | undefined> {
   const headers = new Headers(options.headers);
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const detachSignal = attachAbortListener(options.signal, controller);
+  let timedOut = false;
 
   if (options.auth) {
     const accessToken = readAccessToken();
@@ -33,29 +54,52 @@ async function request<T>(path: string, options: InternalRequestOptions = {}): P
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
-  const response = await fetch(new URL(path, API_BASE_URL), {
-    ...options,
-    headers,
-  });
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
 
-  if (!response.ok) {
-    const payload = (await safeJson(response)) as ApiErrorPayload | null;
-    throw new ApiError(
-      payload ?? {
-        error: "HTTP_ERROR",
-        message: response.statusText || "Request failed",
-        status: response.status,
-        timestamp: new Date().toISOString(),
-        path,
-      },
-    );
+  try {
+    const response = await fetch(new URL(path, API_BASE_URL), {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const payload = (await safeJson(response)) as ApiErrorPayload | null;
+      const apiError = new ApiError(
+        payload ?? {
+          error: "HTTP_ERROR",
+          message: response.statusText || "Request failed",
+          status: response.status,
+          timestamp: new Date().toISOString(),
+          path,
+        },
+      );
+
+      if (options.auth && response.status === 401) {
+        unauthorizedHandler?.(apiError);
+      }
+
+      throw apiError;
+    }
+
+    if (response.status === 204) {
+      return undefined;
+    }
+
+    return (await safeJson(response)) as T;
+  } catch (error) {
+    if (timedOut) {
+      throw new RequestTimeoutError(path, timeoutMs);
+    }
+
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+    detachSignal();
   }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return (await safeJson(response)) as T;
 }
 
 async function safeJson(response: Response) {
@@ -85,6 +129,10 @@ export const httpClient = {
     request<T>(path, { ...options, method: "DELETE" }),
 };
 
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
+  unauthorizedHandler = handler;
+}
+
 function withJsonContentType(headers?: HeadersInit) {
   const nextHeaders = new Headers(headers);
 
@@ -93,4 +141,28 @@ function withJsonContentType(headers?: HeadersInit) {
   }
 
   return nextHeaders;
+}
+
+function attachAbortListener(
+  signal: AbortSignal | null | undefined,
+  controller: AbortController,
+) {
+  if (!signal) {
+    return () => {};
+  }
+
+  const abortController = () => {
+    controller.abort();
+  };
+
+  if (signal.aborted) {
+    abortController();
+    return () => {};
+  }
+
+  signal.addEventListener("abort", abortController);
+
+  return () => {
+    signal.removeEventListener("abort", abortController);
+  };
 }

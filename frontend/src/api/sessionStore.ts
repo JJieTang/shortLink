@@ -1,4 +1,4 @@
-import type { AuthSession } from "@/types/api";
+import type { AuthSession } from "@/types/auth";
 
 const STORAGE_KEY = "shortlink.session";
 

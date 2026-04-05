@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { loginUser, refreshSessionToken, registerUser } from "@/api/auth";
 import { useAuthSessionContext } from "@/context/AuthSessionContext";
 import { ApiError } from "@/types/api";
+import type { AuthSession } from "@/types/auth";
 
 type AuthMode = "login" | "register";
 type FeedbackTone = "success" | "error" | "info";
@@ -38,11 +39,13 @@ export function AuthPage() {
         password: loginPassword,
       });
 
-      setSession({
+      const nextSession: AuthSession = {
         accessToken: response.accessToken,
         refreshToken: response.refreshToken,
         email: loginEmail.trim(),
-      });
+      };
+
+      setSession(nextSession);
       setFeedback({
         tone: "success",
         message: "Signed in successfully. Redirecting you to the links workspace.",
@@ -108,11 +111,13 @@ export function AuthPage() {
         refreshToken: session.refreshToken,
       });
 
-      setSession({
+      const nextSession: AuthSession = {
         accessToken: response.accessToken,
         refreshToken: response.refreshToken,
         email: session.email,
-      });
+      };
+
+      setSession(nextSession);
       setFeedback({
         tone: "success",
         message: "Session rotated successfully.",

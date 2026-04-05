@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { AuthSession } from "@/types/api";
+import type { AuthSession } from "@/types/auth";
 import { readSession, writeSession } from "@/api/sessionStore";
 
 export function useAuthSession() {

@@ -19,9 +19,3 @@ export class ApiError extends Error {
     this.path = payload.path;
   }
 }
-
-export interface AuthSession {
-  accessToken: string;
-  refreshToken?: string;
-  email?: string;
-}

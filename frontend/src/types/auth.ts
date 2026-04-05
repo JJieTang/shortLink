@@ -25,3 +25,9 @@ export interface AuthResponse {
   refreshToken: string;
   tokenType: string;
 }
+
+export interface AuthSession {
+  accessToken: string;
+  refreshToken: string;
+  email?: string;
+}

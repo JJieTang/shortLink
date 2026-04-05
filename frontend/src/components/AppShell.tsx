@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
+import { useAuthSessionContext } from "@/context/AuthSessionContext";
 
 const navigation = [
   { to: "/links", label: "Links", caption: "Create and manage short URLs" },
@@ -7,6 +8,8 @@ const navigation = [
 ];
 
 export function AppShell() {
+  const { session, isAuthenticated, clearSession } = useAuthSessionContext();
+
   return (
     <div className="shell-grid min-h-screen px-4 py-6 text-ink sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-7xl flex-col overflow-hidden rounded-[32px] border border-white/70 bg-white/75 shadow-shell backdrop-blur">
@@ -30,7 +33,7 @@ export function AppShell() {
             <div className="grid gap-3 rounded-3xl border border-ink/10 bg-mist/80 p-4 sm:grid-cols-3">
               <MetricCard label="API Base" value="env-driven" />
               <MetricCard label="Routes" value="3 core views" />
-              <MetricCard label="Theme" value="tailwind shell" />
+              <MetricCard label="Session" value={isAuthenticated ? "active" : "guest"} />
             </div>
           </div>
         </header>
@@ -77,6 +80,30 @@ export function AppShell() {
                 </NavLink>
               ))}
             </nav>
+
+            <div className="mt-5 rounded-[28px] border border-ink/10 bg-white/90 p-4">
+              <p className="text-xs uppercase tracking-[0.24em] text-ink/45">
+                Session
+              </p>
+              <p className="mt-3 text-lg font-semibold text-ink">
+                {isAuthenticated ? "Signed in" : "Guest mode"}
+              </p>
+              <p className="mt-2 text-sm text-ink/65">
+                {session?.email
+                  ? `Current account: ${session.email}`
+                  : "Sign in to create links, view history, and load analytics from the protected API routes."}
+              </p>
+
+              {isAuthenticated ? (
+                <button
+                  type="button"
+                  onClick={clearSession}
+                  className="mt-4 inline-flex rounded-full border border-ink/10 px-4 py-2 text-sm font-semibold text-ink transition hover:border-ink/20 hover:bg-mist"
+                >
+                  Sign out
+                </button>
+              ) : null}
+            </div>
           </aside>
 
           <main className="flex-1 overflow-auto px-4 py-5 sm:px-6 lg:px-8 lg:py-8">

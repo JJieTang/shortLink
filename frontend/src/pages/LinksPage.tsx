@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from "react";
-import { createShortUrl } from "@/api/urls";
+import { useEffect, useState, type FormEvent } from "react";
+import { createShortUrl, deleteShortUrl, listShortUrls } from "@/api/urls";
+import { LinkHistoryTable } from "@/components/links/LinkHistoryTable";
 import { ShortUrlResultCard } from "@/components/links/ShortUrlResultCard";
 import {
   UrlInputForm,
@@ -7,20 +8,34 @@ import {
 } from "@/components/links/UrlInputForm";
 import { MissingAccessTokenError, RequestTimeoutError } from "@/api/httpClient";
 import { ApiError } from "@/types/api";
-import type { ShortUrlRecord } from "@/types/url";
+import type { PageResponse, ShortUrlRecord } from "@/types/url";
 
 const INITIAL_VALUES: UrlInputValues = {
   originalUrl: "",
   customAlias: "",
   expiresAt: "",
 };
+const PAGE_SIZE = 5;
+
+interface FeedbackState {
+  tone: "success" | "error" | "info";
+  message: string;
+}
 
 export function LinksPage() {
   const [values, setValues] = useState<UrlInputValues>(INITIAL_VALUES);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdUrl, setCreatedUrl] = useState<ShortUrlRecord | null>(null);
   const [isCopying, setIsCopying] = useState(false);
+  const [historyPage, setHistoryPage] = useState<PageResponse<ShortUrlRecord> | null>(null);
+  const [historyPageIndex, setHistoryPageIndex] = useState(0);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+  const [deletingShortCode, setDeletingShortCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    void loadHistoryPage(historyPageIndex);
+  }, [historyPageIndex]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -35,13 +50,25 @@ export function LinksPage() {
       });
 
       setCreatedUrl(created);
-      setFeedback("Short URL created successfully.");
+      setFeedback({
+        tone: "success",
+        message: "Short URL created successfully.",
+      });
       setValues((currentValues) => ({
         ...INITIAL_VALUES,
         originalUrl: currentValues.originalUrl.trim(),
       }));
+
+      if (historyPageIndex === 0) {
+        await loadHistoryPage(0);
+      } else {
+        setHistoryPageIndex(0);
+      }
     } catch (error) {
-      setFeedback(toMessage(error));
+      setFeedback({
+        tone: "error",
+        message: toMessage(error),
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -56,11 +83,53 @@ export function LinksPage() {
 
     try {
       await navigator.clipboard.writeText(createdUrl.shortUrl);
-      setFeedback("Short URL copied to your clipboard.");
+      setFeedback({
+        tone: "info",
+        message: "Short URL copied to your clipboard.",
+      });
     } catch {
-      setFeedback("Copy failed. You can still copy the short URL manually.");
+      setFeedback({
+        tone: "error",
+        message: "Copy failed. You can still copy the short URL manually.",
+      });
     } finally {
       setIsCopying(false);
+    }
+  }
+
+  async function handleDelete(shortCode: string) {
+    setDeletingShortCode(shortCode);
+    setFeedback(null);
+
+    try {
+      await deleteShortUrl(shortCode);
+
+      if (createdUrl?.shortCode === shortCode) {
+        setCreatedUrl(null);
+      }
+
+      const nextPageIndex =
+        historyPage && historyPage.content.length === 1 && historyPageIndex > 0
+          ? historyPageIndex - 1
+          : historyPageIndex;
+
+      if (nextPageIndex === historyPageIndex) {
+        await loadHistoryPage(nextPageIndex);
+      } else {
+        setHistoryPageIndex(nextPageIndex);
+      }
+
+      setFeedback({
+        tone: "success",
+        message: `Deleted short link ${shortCode}.`,
+      });
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: toMessage(error),
+      });
+    } finally {
+      setDeletingShortCode(null);
     }
   }
 
@@ -69,6 +138,22 @@ export function LinksPage() {
       ...currentValues,
       [field]: value,
     }));
+  }
+
+  async function loadHistoryPage(pageIndex: number) {
+    setIsHistoryLoading(true);
+
+    try {
+      const nextPage = await listShortUrls(pageIndex, PAGE_SIZE);
+      setHistoryPage(nextPage);
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: toMessage(error),
+      });
+    } finally {
+      setIsHistoryLoading(false);
+    }
   }
 
   return (
@@ -90,8 +175,17 @@ export function LinksPage() {
           </p>
 
           {feedback ? (
-            <div className="mt-5 rounded-3xl border border-pine/15 bg-pine/8 px-4 py-3 text-sm font-medium text-ink">
-              {feedback}
+            <div
+              className={[
+                "mt-5 rounded-3xl border px-4 py-3 text-sm font-medium",
+                feedback.tone === "success"
+                  ? "border-pine/15 bg-pine/8 text-ink"
+                  : feedback.tone === "info"
+                    ? "border-gold/20 bg-gold/10 text-ink"
+                    : "border-ember/15 bg-ember/8 text-ember",
+              ].join(" ")}
+            >
+              {feedback.message}
             </div>
           ) : null}
 
@@ -121,6 +215,15 @@ export function LinksPage() {
           </article>
         )}
       </div>
+
+      <LinkHistoryTable
+        page={historyPage}
+        isLoading={isHistoryLoading}
+        deletingShortCode={deletingShortCode}
+        onPreviousPage={() => setHistoryPageIndex((pageIndex) => Math.max(pageIndex - 1, 0))}
+        onNextPage={() => setHistoryPageIndex((pageIndex) => pageIndex + 1)}
+        onDelete={handleDelete}
+      />
     </section>
   );
 }

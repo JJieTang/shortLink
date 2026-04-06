@@ -1,6 +1,11 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useReducer, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { loginUser, refreshSessionToken, registerUser } from "@/api/auth";
+import { AuthFeedbackBanner } from "@/components/auth/AuthFeedbackBanner";
+import { LoginForm } from "@/components/auth/LoginForm";
+import { RegisterForm } from "@/components/auth/RegisterForm";
+import { SessionPanel } from "@/components/auth/SessionPanel";
+import { ModeButton } from "@/components/auth/authUi";
 import { useAuthSessionContext } from "@/context/AuthSessionContext";
 import { ApiError } from "@/types/api";
 import type { AuthSession } from "@/types/auth";
@@ -13,6 +18,37 @@ interface FeedbackState {
   message: string;
 }
 
+interface AuthFormsState {
+  login: {
+    email: string;
+    password: string;
+  };
+  register: {
+    name: string;
+    email: string;
+    password: string;
+  };
+}
+
+type AuthFormsAction =
+  | { type: "update-login"; field: "email" | "password"; value: string }
+  | { type: "update-register"; field: "name" | "email" | "password"; value: string }
+  | { type: "reset-login"; email?: string }
+  | { type: "reset-register" }
+  | { type: "clear-login-password" };
+
+const INITIAL_AUTH_FORMS: AuthFormsState = {
+  login: {
+    email: "",
+    password: "",
+  },
+  register: {
+    name: "",
+    email: "",
+    password: "",
+  },
+};
+
 export function AuthPage() {
   const navigate = useNavigate();
   const { session, setSession, clearSession, isAuthenticated } = useAuthSessionContext();
@@ -20,13 +56,29 @@ export function AuthPage() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const [pendingRedirect, setPendingRedirect] = useState(false);
+  const [forms, dispatch] = useReducer(authFormsReducer, INITIAL_AUTH_FORMS);
 
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
+  useEffect(() => {
+    if (!pendingRedirect || !isAuthenticated) {
+      return;
+    }
 
-  const [registerName, setRegisterName] = useState("");
-  const [registerEmail, setRegisterEmail] = useState("");
-  const [registerPassword, setRegisterPassword] = useState("");
+    setPendingRedirect(false);
+    navigate("/links", { replace: true });
+  }, [isAuthenticated, navigate, pendingRedirect]);
+
+  function handleModeChange(nextMode: AuthMode) {
+    setMode(nextMode);
+    setFeedback(null);
+
+    if (nextMode === "login") {
+      dispatch({ type: "reset-login" });
+      return;
+    }
+
+    dispatch({ type: "reset-register" });
+  }
 
   async function handleLoginSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -35,25 +87,23 @@ export function AuthPage() {
 
     try {
       const response = await loginUser({
-        email: loginEmail.trim(),
-        password: loginPassword,
+        email: forms.login.email.trim(),
+        password: forms.login.password,
       });
 
       const nextSession: AuthSession = {
         accessToken: response.accessToken,
         refreshToken: response.refreshToken,
-        email: loginEmail.trim(),
+        email: forms.login.email.trim(),
       };
 
       setSession(nextSession);
       setFeedback({
         tone: "success",
-        message: "Signed in successfully. Redirecting you to the links workspace.",
+        message: "Signed in successfully. Opening the links workspace now.",
       });
-      setLoginPassword("");
-      window.setTimeout(() => {
-        navigate("/links");
-      }, 500);
+      dispatch({ type: "clear-login-password" });
+      setPendingRedirect(true);
     } catch (error) {
       setFeedback({
         tone: "error",
@@ -71,15 +121,14 @@ export function AuthPage() {
 
     try {
       const response = await registerUser({
-        email: registerEmail.trim(),
-        password: registerPassword,
-        name: registerName.trim(),
+        email: forms.register.email.trim(),
+        password: forms.register.password,
+        name: forms.register.name.trim(),
       });
 
       setMode("login");
-      setLoginEmail(response.email);
-      setLoginPassword("");
-      setRegisterPassword("");
+      dispatch({ type: "reset-login", email: response.email });
+      dispatch({ type: "reset-register" });
       setFeedback({
         tone: "success",
         message: `Account created for ${response.email}. Sign in to start managing links.`,
@@ -123,10 +172,17 @@ export function AuthPage() {
         message: "Session rotated successfully.",
       });
     } catch (error) {
-      clearSession();
+      const shouldSignOut = shouldClearSessionOnRefreshFailure(error);
+
+      if (shouldSignOut) {
+        clearSession();
+      }
+
       setFeedback({
         tone: "error",
-        message: `${toMessage(error, "Session refresh failed.")} You have been signed out.`,
+        message: shouldSignOut
+          ? `${toMessage(error, "Session refresh failed.")} You have been signed out.`
+          : toMessage(error, "Session refresh failed. Please try again."),
       });
     } finally {
       setIsSubmitting(false);
@@ -139,171 +195,76 @@ export function AuthPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-ember">Authentication</p>
         <h2 className="text-2xl font-semibold tracking-tight text-ink">Register, sign in, and rotate sessions</h2>
         <p className="max-w-3xl text-sm text-ink/70">
-          This page is now wired to the backend auth endpoints. It can create accounts, exchange
-          credentials for tokens, persist the active session, and rotate refresh tokens.
+          This page is wired to the backend auth endpoints and now keeps the auth forms, feedback,
+          and session actions in smaller components.
         </p>
       </header>
 
       <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
         <section className="rounded-[32px] border border-ink/10 bg-white px-6 py-6 shadow-sm">
           <div className="flex flex-wrap gap-3">
-            <ModeButton active={mode === "login"} onClick={() => setMode("login")}>
+            <ModeButton active={mode === "login"} onClick={() => handleModeChange("login")}>
               Login
             </ModeButton>
-            <ModeButton active={mode === "register"} onClick={() => setMode("register")}>
+            <ModeButton active={mode === "register"} onClick={() => handleModeChange("register")}>
               Register
             </ModeButton>
           </div>
 
-          {feedback ? <FeedbackBanner feedback={feedback} /> : null}
+          {feedback ? <AuthFeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
 
           <div className="mt-6">
             {mode === "login" ? (
-              <form className="grid gap-4" onSubmit={handleLoginSubmit}>
-                <Field label="Email" htmlFor="login-email">
-                  <input
-                    id="login-email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    value={loginEmail}
-                    onChange={(event) => setLoginEmail(event.target.value)}
-                    className={inputClassName}
-                    placeholder="you@example.com"
-                  />
-                </Field>
-
-                <Field label="Password" htmlFor="login-password">
-                  <input
-                    id="login-password"
-                    type="password"
-                    autoComplete="current-password"
-                    required
-                    minLength={8}
-                    value={loginPassword}
-                    onChange={(event) => setLoginPassword(event.target.value)}
-                    className={inputClassName}
-                    placeholder="At least 8 characters"
-                  />
-                </Field>
-
-                <div className="flex flex-wrap gap-3 pt-2">
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className={primaryButtonClassName}
-                  >
-                    {isSubmitting ? "Signing in..." : "Sign in"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMode("register")}
-                    className={secondaryButtonClassName}
-                  >
-                    Need an account?
-                  </button>
-                </div>
-              </form>
+              <LoginForm
+                email={forms.login.email}
+                password={forms.login.password}
+                isSubmitting={isSubmitting}
+                onEmailChange={(value) =>
+                  dispatch({ type: "update-login", field: "email", value })
+                }
+                onPasswordChange={(value) =>
+                  dispatch({ type: "update-login", field: "password", value })
+                }
+                onNeedAccount={() => handleModeChange("register")}
+                onSubmit={handleLoginSubmit}
+              />
             ) : (
-              <form className="grid gap-4" onSubmit={handleRegisterSubmit}>
-                <Field label="Name" htmlFor="register-name">
-                  <input
-                    id="register-name"
-                    type="text"
-                    autoComplete="name"
-                    required
-                    value={registerName}
-                    onChange={(event) => setRegisterName(event.target.value)}
-                    className={inputClassName}
-                    placeholder="ShortLink Operator"
-                  />
-                </Field>
-
-                <Field label="Email" htmlFor="register-email">
-                  <input
-                    id="register-email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    value={registerEmail}
-                    onChange={(event) => setRegisterEmail(event.target.value)}
-                    className={inputClassName}
-                    placeholder="you@example.com"
-                  />
-                </Field>
-
-                <Field label="Password" htmlFor="register-password">
-                  <input
-                    id="register-password"
-                    type="password"
-                    autoComplete="new-password"
-                    required
-                    minLength={8}
-                    value={registerPassword}
-                    onChange={(event) => setRegisterPassword(event.target.value)}
-                    className={inputClassName}
-                    placeholder="Must include one uppercase letter and one digit"
-                  />
-                </Field>
-
-                <div className="flex flex-wrap gap-3 pt-2">
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className={primaryButtonClassName}
-                  >
-                    {isSubmitting ? "Creating account..." : "Create account"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMode("login")}
-                    className={secondaryButtonClassName}
-                  >
-                    Already registered?
-                  </button>
-                </div>
-              </form>
+              <RegisterForm
+                name={forms.register.name}
+                email={forms.register.email}
+                password={forms.register.password}
+                isSubmitting={isSubmitting}
+                onNameChange={(value) =>
+                  dispatch({ type: "update-register", field: "name", value })
+                }
+                onEmailChange={(value) =>
+                  dispatch({ type: "update-register", field: "email", value })
+                }
+                onPasswordChange={(value) =>
+                  dispatch({ type: "update-register", field: "password", value })
+                }
+                onAlreadyRegistered={() => handleModeChange("login")}
+                onSubmit={handleRegisterSubmit}
+              />
             )}
           </div>
         </section>
 
         <aside className="grid gap-4">
-          <article className="rounded-[32px] border border-ink/10 bg-[linear-gradient(135deg,#fbf7f0_0%,#e8dcc6_100%)] px-5 py-5 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.24em] text-ink/45">Session state</p>
-            <h3 className="mt-3 text-xl font-semibold text-ink">
-              {isAuthenticated ? "Authenticated" : "Waiting for sign-in"}
-            </h3>
-            <p className="mt-2 text-sm leading-6 text-ink/68">
-              {session?.email
-                ? `Tokens for ${session.email} are stored locally and ready to be used by protected requests.`
-                : "No active session is stored yet. Sign in to unlock the protected API routes."}
-            </p>
-
-            <div className="mt-5 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={handleRefreshSession}
-                disabled={isSubmitting}
-                className={primaryButtonClassName}
-              >
-                Refresh session
-              </button>
-              <button
-                type="button"
-                onClick={clearSession}
-                className={secondaryButtonClassName}
-              >
-                Clear session
-              </button>
-            </div>
-          </article>
+          <SessionPanel
+            session={session}
+            isAuthenticated={isAuthenticated}
+            isSubmitting={isSubmitting}
+            onRefresh={handleRefreshSession}
+            onClearSession={clearSession}
+          />
 
           <article className="rounded-[32px] border border-ink/10 bg-white px-5 py-5 shadow-sm">
             <p className="text-xs uppercase tracking-[0.24em] text-ember">What this commit adds</p>
             <ul className="mt-4 grid gap-3 text-sm leading-6 text-ink/68">
-              <li>Real login and register forms wired to the Spring Boot auth endpoints.</li>
-              <li>Session persistence in localStorage plus app-wide auth state through context.</li>
-              <li>Refresh-token rotation support so the shell can keep a session alive.</li>
+              <li>Auth forms are split into smaller components with a shared reducer for field state.</li>
+              <li>Login redirect is now state-driven instead of using a hard-coded timeout.</li>
+              <li>Refresh failures only sign the user out when the backend says the session is invalid.</li>
             </ul>
           </article>
         </aside>
@@ -312,64 +273,58 @@ export function AuthPage() {
   );
 }
 
-function FeedbackBanner({ feedback }: { feedback: FeedbackState }) {
-  const toneClassName =
-    feedback.tone === "success"
-      ? "border-pine/20 bg-pine/10 text-pine"
-      : feedback.tone === "info"
-        ? "border-gold/20 bg-gold/10 text-ink"
-        : "border-ember/20 bg-ember/10 text-ember";
-
-  return (
-    <div className={`mt-5 rounded-3xl border px-4 py-3 text-sm font-medium ${toneClassName}`}>
-      {feedback.message}
-    </div>
-  );
+function authFormsReducer(state: AuthFormsState, action: AuthFormsAction): AuthFormsState {
+  switch (action.type) {
+    case "update-login":
+      return {
+        ...state,
+        login: {
+          ...state.login,
+          [action.field]: action.value,
+        },
+      };
+    case "update-register":
+      return {
+        ...state,
+        register: {
+          ...state.register,
+          [action.field]: action.value,
+        },
+      };
+    case "reset-login":
+      return {
+        ...state,
+        login: {
+          email: action.email ?? "",
+          password: "",
+        },
+      };
+    case "reset-register":
+      return {
+        ...state,
+        register: {
+          name: "",
+          email: "",
+          password: "",
+        },
+      };
+    case "clear-login-password":
+      return {
+        ...state,
+        login: {
+          ...state.login,
+          password: "",
+        },
+      };
+    default:
+      return state;
+  }
 }
 
-function ModeButton(props: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={props.onClick}
-      className={[
-        "rounded-full px-4 py-2 text-sm font-semibold transition",
-        props.active
-          ? "bg-ink text-white"
-          : "border border-ink/10 bg-mist text-ink hover:border-ink/20 hover:bg-white",
-      ].join(" ")}
-    >
-      {props.children}
-    </button>
-  );
-}
-
-function Field(props: {
-  label: string;
-  htmlFor: string;
-  children: ReactNode;
-}) {
-  return (
-    <label className="grid gap-2" htmlFor={props.htmlFor}>
-      <span className="text-sm font-semibold text-ink">{props.label}</span>
-      {props.children}
-    </label>
-  );
+function shouldClearSessionOnRefreshFailure(error: unknown) {
+  return error instanceof ApiError && error.status >= 400 && error.status < 500;
 }
 
 function toMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
-
-const inputClassName =
-  "w-full rounded-2xl border border-ink/12 bg-mist/60 px-4 py-3 text-sm text-ink outline-none transition placeholder:text-ink/35 focus:border-pine/40 focus:bg-white";
-
-const primaryButtonClassName =
-  "inline-flex items-center justify-center rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white transition hover:bg-pine disabled:cursor-not-allowed disabled:bg-ink/40";
-
-const secondaryButtonClassName =
-  "inline-flex items-center justify-center rounded-full border border-ink/10 px-5 py-3 text-sm font-semibold text-ink transition hover:border-ink/20 hover:bg-mist";

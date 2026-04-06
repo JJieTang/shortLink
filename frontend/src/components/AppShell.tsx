@@ -1,14 +1,9 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuthSessionContext } from "@/context/AuthSessionContext";
 
-const navigation = [
-  { to: "/links", label: "Links", caption: "Create and manage short URLs" },
-  { to: "/analytics", label: "Analytics", caption: "Review traffic and trends" },
-  { to: "/auth", label: "Auth", caption: "Sign in and refresh sessions" },
-];
-
 export function AppShell() {
   const { session, isAuthenticated, clearSession } = useAuthSessionContext();
+  const navigation = getNavigationItems(isAuthenticated);
 
   return (
     <div className="shell-grid min-h-screen px-4 py-6 text-ink sm:px-6 lg:px-8">
@@ -32,7 +27,7 @@ export function AppShell() {
             </div>
             <div className="grid gap-3 rounded-3xl border border-ink/10 bg-mist/80 p-4 sm:grid-cols-3">
               <MetricCard label="API Base" value="env-driven" />
-              <MetricCard label="Routes" value="3 core views" />
+              <MetricCard label="Routes" value={`${navigation.length} core views`} />
               <MetricCard label="Session" value={isAuthenticated ? "active" : "guest"} />
             </div>
           </div>
@@ -102,7 +97,14 @@ export function AppShell() {
                 >
                   Sign out
                 </button>
-              ) : null}
+              ) : (
+                <NavLink
+                  to="/auth"
+                  className="mt-4 inline-flex rounded-full border border-ink/10 px-4 py-2 text-sm font-semibold text-ink transition hover:border-ink/20 hover:bg-mist"
+                >
+                  Sign in
+                </NavLink>
+              )}
             </div>
           </aside>
 
@@ -113,6 +115,25 @@ export function AppShell() {
       </div>
     </div>
   );
+}
+
+function getNavigationItems(isAuthenticated: boolean) {
+  const primaryItems = [
+    { to: "/links", label: "Links", caption: "Create and manage short URLs" },
+    { to: "/analytics", label: "Analytics", caption: "Review traffic and trends" },
+  ];
+
+  if (!isAuthenticated) {
+    return [
+      ...primaryItems,
+      { to: "/auth", label: "Auth", caption: "Sign in and open a new session" },
+    ];
+  }
+
+  return [
+    ...primaryItems,
+    { to: "/auth", label: "Account", caption: "Review session tools and rotate tokens" },
+  ];
 }
 
 function MetricCard({ label, value }: { label: string; value: string }) {

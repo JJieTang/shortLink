@@ -40,7 +40,7 @@ After startup, the main entry points are:
 - App API: `http://localhost:${APP_PORT}`
 - Frontend: `http://localhost:${FRONTEND_PORT}`
 - Prometheus: `http://localhost:${PROMETHEUS_PORT}`
-- Grafana: `http://localhost:${GRAFANA_PORT}` with `admin/admin` by default
+- Grafana: `http://localhost:${GRAFANA_PORT}` with `admin/admin` by default, already provisioned with a Prometheus datasource
 
 Important routing note:
 
@@ -232,7 +232,7 @@ Examples already wired in the backend:
 - `shortlink_consumer_lag`
 - `shortlink_dlq_size`
 
-Grafana is included in the Compose stack now so the observability surface is runnable locally. Dashboard provisioning and benchmark evidence are tracked separately from this demo setup.
+Grafana is included in the Compose stack now so the observability surface is runnable locally, and the Prometheus datasource is provisioned automatically. Dashboard provisioning and benchmark evidence are tracked separately from this demo setup.
 
 ## Run Tests Locally
 

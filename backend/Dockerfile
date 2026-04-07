@@ -17,7 +17,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /app/target/backend-0.0.1-SNAPSHOT.jar app.jar
+COPY --from=build /app/target/shortlink-app.jar app.jar
 
 EXPOSE 8080
 

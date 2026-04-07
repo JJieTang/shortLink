@@ -41,6 +41,8 @@ app:
   base-url: http://localhost:8080
   cache:
     url-ttl: 24h
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   jwt:
     issuer: shortlink
     secret: ${JWT_SECRET:replace-this-dev-secret-with-at-least-32-characters}

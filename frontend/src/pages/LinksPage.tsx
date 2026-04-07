@@ -162,7 +162,7 @@ export function LinksPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-pine">Links</p>
         <h2 className="text-2xl font-semibold tracking-tight">Links workspace</h2>
         <p className="max-w-2xl text-sm text-ink/70">
-          Create a short URL now, then we will layer the history table on top in the next commit.
+          Create new short links, review the newest result, and manage your recent history from one workspace.
         </p>
       </header>
 

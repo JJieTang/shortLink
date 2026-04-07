@@ -18,10 +18,10 @@ export function AnalyticsPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    void loadAvailableLinks();
+    void loadAvailableLinks(fromDate, toDate);
   }, []);
 
-  async function loadAvailableLinks() {
+  async function loadAvailableLinks(initialFromDate: string, initialToDate: string) {
     setIsLoading(true);
     setFeedback(null);
 
@@ -37,7 +37,11 @@ export function AnalyticsPage() {
 
       const initialShortCode = shortCodes[0];
       setSelectedShortCode(initialShortCode);
-      const response = await safeAnalyticsRequest(initialShortCode, fromDate, toDate);
+      const response = await safeAnalyticsRequest(
+        initialShortCode,
+        initialFromDate,
+        initialToDate,
+      );
       setAnalytics(response);
     } catch (error) {
       setFeedback({

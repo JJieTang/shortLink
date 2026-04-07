@@ -2,6 +2,14 @@
 
 ShortLink is a self-hosted URL shortener with JWT auth, Redis-backed redirect caching, and async click analytics.
 
+## Prerequisites
+
+Before running the demo flow, make sure you have:
+
+- Docker Desktop or Docker Engine with Compose V2
+- `curl`
+- `jq`
+
 ## Quick Start
 
 The fastest reviewer path is:
@@ -10,6 +18,12 @@ The fastest reviewer path is:
 cp .env.example .env
 docker compose up -d
 ./smoke-test.sh
+```
+
+If you want to clean everything up afterward, including PostgreSQL data, run:
+
+```bash
+docker compose down -v
 ```
 
 If port `3000`, `3001`, `8080`, or `9090` is already in use on your machine, edit `.env` first and change:
@@ -28,6 +42,12 @@ After startup, the main entry points are:
 - Prometheus: `http://localhost:${PROMETHEUS_PORT}`
 - Grafana: `http://localhost:${GRAFANA_PORT}` with `admin/admin` by default
 
+Important routing note:
+
+- Frontend UI lives on `FRONTEND_PORT`
+- Public short-link redirects such as `/{shortCode}` are served by the backend on `APP_PORT`
+- Example: `http://localhost:3000` is the app UI, while `http://localhost:8080/demo-home` is a redirect entry point
+
 The smoke test seeds this reviewer account:
 
 - Email: `demo@shortlink.local`
@@ -44,6 +64,8 @@ The smoke test seeds this reviewer account:
 5. Create a new short URL through the authenticated API
 6. Hit the short URL twice as two different visitors
 7. Poll analytics until async click processing updates daily stats
+
+Each smoke-test run creates one new `smoke-*` short link so the verification remains visible in the UI and API afterward.
 
 ## Architecture
 
@@ -71,10 +93,16 @@ flowchart LR
 
 ## Core API Walkthrough
 
+For the examples below, set your API base first. If you changed `APP_PORT`, update this value to match:
+
+```bash
+APP=http://localhost:8080
+```
+
 ### Login
 
 ```bash
-curl -sS -X POST http://localhost:8080/api/v1/auth/login \
+curl -sS -X POST "$APP/api/v1/auth/login" \
   -H "Content-Type: application/json" \
   -d '{
     "email": "demo@shortlink.local",
@@ -85,7 +113,7 @@ curl -sS -X POST http://localhost:8080/api/v1/auth/login \
 ### Create a short URL
 
 ```bash
-curl -sS -X POST http://localhost:8080/api/v1/urls \
+curl -sS -X POST "$APP/api/v1/urls" \
   -H "Authorization: Bearer <access-token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -112,7 +140,7 @@ Example response:
 ### Redirect
 
 ```bash
-curl -i http://localhost:8080/launch-demo
+curl -i "$APP/launch-demo"
 ```
 
 Expected:
@@ -125,7 +153,7 @@ Location: https://example.com/landing-page
 ### Analytics
 
 ```bash
-curl -sS "http://localhost:8080/api/v1/urls/launch-demo/analytics?from=2026-04-07&to=2026-04-07" \
+curl -sS "$APP/api/v1/urls/launch-demo/analytics?from=2026-04-07&to=2026-04-07" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -204,10 +232,28 @@ Examples already wired in the backend:
 - `shortlink_consumer_lag`
 - `shortlink_dlq_size`
 
-Grafana is included in the Compose stack now so the observability surface is runnable locally. Dashboard JSON and benchmark evidence belong to the next phase.
+Grafana is included in the Compose stack now so the observability surface is runnable locally. Dashboard provisioning and benchmark evidence are tracked separately from this demo setup.
+
+## Run Tests Locally
+
+Backend tests:
+
+```bash
+cd backend
+./mvnw test
+```
+
+Frontend tests:
+
+```bash
+cd frontend
+npm test
+```
+
+Backend integration tests use Testcontainers, so Docker must be running before you execute the full backend suite.
 
 ## Known Limitations
 
 - Refresh token rotation does not yet implement token-family reuse detection.
-- Grafana dashboards and k6 benchmark artifacts are not yet committed in this phase.
+- Grafana dashboards and k6 benchmark artifacts are not yet committed.
 - If you change published ports in `.env`, remember that URLs shown in API responses depend on `APP_BASE_URL`.

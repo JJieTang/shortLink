@@ -5,14 +5,17 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.scheduling.concurrent.CustomizableThreadFactory;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Configuration
 public class AsyncConfig {
 
-    @Bean(name = "clickEventExecutor")
-    public Executor clickEventExecutor(
+    @Bean(name = "clickEventPublishExecutor")
+    public Executor clickEventPublishExecutor(
             MeterRegistry meterRegistry,
             @Value("${app.async.click-event.core-pool-size:2}") int corePoolSize,
             @Value("${app.async.click-event.max-pool-size:4}") int maxPoolSize,
@@ -32,5 +35,11 @@ public class AsyncConfig {
         );
         executor.initialize();
         return executor;
+    }
+
+    @Bean(name = "clickEventWorkerExecutor", destroyMethod = "shutdown")
+    public ExecutorService clickEventWorkerExecutor(
+            @Value("${app.async.click-event.worker-thread-name-prefix:click-event-worker-}") String threadNamePrefix) {
+        return Executors.newSingleThreadExecutor(new CustomizableThreadFactory(threadNamePrefix));
     }
 }

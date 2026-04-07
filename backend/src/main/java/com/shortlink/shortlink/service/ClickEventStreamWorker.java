@@ -53,7 +53,7 @@ public class ClickEventStreamWorker {
             ClickEventConsumer clickEventConsumer,
             ClickEventDlqHandler clickEventDlqHandler,
             @Qualifier("clickProcessingErrorsCounter") Counter clickProcessingErrorsCounter,
-            @Qualifier("clickEventExecutor") Executor clickEventExecutor,
+            @Qualifier("clickEventWorkerExecutor") Executor clickEventExecutor,
             @Value("${app.click-stream.stream-key}") String streamKey,
             @Value("${app.click-stream.consumer-group}") String consumerGroup,
             @Value("${app.click-stream.consumer-name}") String consumerName,

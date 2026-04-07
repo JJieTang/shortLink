@@ -31,7 +31,7 @@ public class ClickEventPublisher {
 
     public ClickEventPublisher(
             StringRedisTemplate stringRedisTemplate,
-            @Qualifier("clickEventExecutor") Executor clickEventExecutor,
+            @Qualifier("clickEventPublishExecutor") Executor clickEventExecutor,
             MeterRegistry meterRegistry,
             @Value("${app.click-stream.stream-key}") String streamKey,
             @Value("${app.click-stream.max-length}") long streamMaxLength) {

@@ -65,9 +65,6 @@ export function UrlInputForm({
         >
           {isSubmitting ? "Creating short URL..." : "Create short URL"}
         </button>
-        <p className="text-sm text-ink/55">
-          Alias and expiry are optional. The backend will generate a short code if you leave alias blank.
-        </p>
       </div>
     </form>
   );

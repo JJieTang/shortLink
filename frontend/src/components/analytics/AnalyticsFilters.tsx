@@ -77,9 +77,6 @@ export function AnalyticsFilters({
         >
           {isLoading ? "Loading analytics..." : "Load analytics"}
         </button>
-        <p className="text-sm text-ink/55">
-          Analytics are fetched from the protected `/api/v1/urls/{'{shortCode}'}/analytics` route.
-        </p>
       </div>
     </article>
   );

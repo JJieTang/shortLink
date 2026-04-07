@@ -202,10 +202,6 @@ export function AuthPage() {
       <header className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-ember">Authentication</p>
         <h2 className="text-2xl font-semibold tracking-tight text-ink">Register, sign in, and rotate sessions</h2>
-        <p className="max-w-3xl text-sm text-ink/70">
-          This page is wired to the backend auth endpoints and now keeps the auth forms, feedback,
-          and session actions in smaller components.
-        </p>
       </header>
 
       <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
@@ -272,15 +268,6 @@ export function AuthPage() {
             onRefresh={handleRefreshSession}
             onClearSession={clearSession}
           />
-
-          <article className="rounded-[32px] border border-ink/10 bg-white px-5 py-5 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.24em] text-ember">What this commit adds</p>
-            <ul className="mt-4 grid gap-3 text-sm leading-6 text-ink/68">
-              <li>Auth forms are split into smaller components with a shared reducer for field state.</li>
-              <li>Login redirect is now state-driven instead of using a hard-coded timeout.</li>
-              <li>Refresh failures only sign the user out when the backend says the session is invalid.</li>
-            </ul>
-          </article>
         </aside>
       </div>
     </section>

@@ -11,18 +11,10 @@ export function AppShell() {
         <header className="border-b border-ink/10 px-6 py-5 sm:px-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="space-y-3">
-              <span className="inline-flex w-fit items-center rounded-full bg-pine/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-pine">
-                Phase 4 Frontend
-              </span>
               <div>
                 <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
                   ShortLink control room
                 </h1>
-                <p className="mt-2 max-w-2xl text-sm text-ink/70 sm:text-base">
-                  A web shell for link operations, authentication flows, and analytics.
-                  This first commit establishes the shared navigation, layout, and client
-                  infrastructure for the rest of Phase 4.
-                </p>
               </div>
             </div>
             <div className="grid gap-3 rounded-3xl border border-ink/10 bg-mist/80 p-4 sm:grid-cols-3">

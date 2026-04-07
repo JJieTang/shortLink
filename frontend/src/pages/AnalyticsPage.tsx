@@ -4,6 +4,7 @@ import { listShortUrls } from "@/api/urls";
 import { AnalyticsFilters } from "@/components/analytics/AnalyticsFilters";
 import { AnalyticsSummaryCards } from "@/components/analytics/AnalyticsSummaryCards";
 import { AnalyticsTrendChart } from "@/components/analytics/AnalyticsTrendChart";
+import { FeedbackBanner } from "@/components/FeedbackBanner";
 import type { UrlAnalytics } from "@/types/analytics";
 import type { FeedbackState } from "@/types/feedback";
 import { toFeedbackErrorMessage } from "@/utils/errorMessage";
@@ -94,18 +95,7 @@ export function AnalyticsPage() {
         </p>
       </header>
 
-      {feedback ? (
-        <div
-          className={[
-            "rounded-3xl border px-4 py-3 text-sm font-medium",
-            feedback.tone === "error"
-              ? "border-ember/15 bg-ember/8 text-ember"
-              : "border-gold/20 bg-gold/10 text-ink",
-          ].join(" ")}
-        >
-          {feedback.message}
-        </div>
-      ) : null}
+      {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
 
       <AnalyticsFilters
         availableShortCodes={availableShortCodes}

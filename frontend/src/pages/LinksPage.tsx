@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createShortUrl, deleteShortUrl, listShortUrls } from "@/api/urls";
+import { FeedbackBanner } from "@/components/FeedbackBanner";
 import { LinkHistoryTable } from "@/components/links/LinkHistoryTable";
 import { ShortUrlResultCard } from "@/components/links/ShortUrlResultCard";
 import {
@@ -179,18 +180,11 @@ export function LinksPage() {
           </p>
 
           {feedback ? (
-            <div
-              className={[
-                "mt-5 rounded-3xl border px-4 py-3 text-sm font-medium",
-                feedback.tone === "success"
-                  ? "border-pine/15 bg-pine/8 text-ink"
-                  : feedback.tone === "info"
-                    ? "border-gold/20 bg-gold/10 text-ink"
-                    : "border-ember/15 bg-ember/8 text-ember",
-              ].join(" ")}
-            >
-              {feedback.message}
-            </div>
+            <FeedbackBanner
+              tone={feedback.tone}
+              message={feedback.message}
+              className="mt-5"
+            />
           ) : null}
 
           <div className="mt-6">

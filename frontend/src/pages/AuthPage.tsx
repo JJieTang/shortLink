@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { loginUser, refreshSessionToken, registerUser } from "@/api/auth";
-import { AuthFeedbackBanner } from "@/components/auth/AuthFeedbackBanner";
+import { FeedbackBanner } from "@/components/FeedbackBanner";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { RegisterForm } from "@/components/auth/RegisterForm";
 import { SessionPanel } from "@/components/auth/SessionPanel";
@@ -219,7 +219,13 @@ export function AuthPage() {
             </ModeButton>
           </div>
 
-          {feedback ? <AuthFeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
+          {feedback ? (
+            <FeedbackBanner
+              tone={feedback.tone}
+              message={feedback.message}
+              className="mt-5"
+            />
+          ) : null}
 
           <div className="mt-6">
             {mode === "login" ? (

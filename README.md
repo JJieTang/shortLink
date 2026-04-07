@@ -6,17 +6,13 @@ ShortLink is a URL shortener workspace organized around the architecture from th
 
 ```text
 .
-├── backend/          Spring Boot API, domain logic, tests, and Flyway migrations
+├── backend/          Self-contained Maven Spring Boot API, tests, and Flyway migrations
 ├── frontend/         React SPA workspace (currently scaffolded as a reserved directory)
 ├── infra/            Local infra assets such as Grafana, k6, and GeoIP data
-├── .mvn/             Maven wrapper support files
-├── mvnw
-├── mvnw.cmd
-├── pom.xml           Workspace aggregator
 └── README.md
 ```
 
-Current implementation lives in `backend/`. The `frontend/` and `infra/` directories are now present so the repository matches the architecture plan and can grow into that shape cleanly.
+Current implementation lives in `backend/`. The backend is now a self-contained Maven project with its own wrapper, so backend commands run from `backend/` instead of the repository root. The `frontend/` and `infra/` directories remain available for the later phases.
 
 Current status: `Phase 3 completed`
 
@@ -211,7 +207,8 @@ To enable GeoIP locally:
 
 ```bash
 export GEOIP_DB_PATH=/Users/your-name/path/to/GeoLite2-City.mmdb
-./mvnw -f backend/pom.xml spring-boot:run
+cd backend
+./mvnw spring-boot:run
 ```
 
 If `GEOIP_DB_PATH` is missing, points to a missing file, or the database cannot be opened, `GeoLookupService` logs a warning and gracefully disables GeoIP lookup.
@@ -255,10 +252,11 @@ Key behaviors already covered in tests:
 Useful commands:
 
 ```bash
-./mvnw -f backend/pom.xml -q -Dtest=RedisCacheIntegrationTest test
-./mvnw -f backend/pom.xml -q -Dtest=ClickPipelineIntegrationTest test
-./mvnw -f backend/pom.xml -q -Dtest=ClickEventDlqIntegrationTest test
-./mvnw -f backend/pom.xml -q -Dtest=ClickEventReplayIntegrationTest test
+cd backend
+./mvnw -q -Dtest=RedisCacheIntegrationTest test
+./mvnw -q -Dtest=ClickPipelineIntegrationTest test
+./mvnw -q -Dtest=ClickEventDlqIntegrationTest test
+./mvnw -q -Dtest=ClickEventReplayIntegrationTest test
 ```
 
 These integration tests use Testcontainers, so Docker must be running.
@@ -278,13 +276,15 @@ Phase 2 currently exposes these key metrics through `/actuator/prometheus`:
 Make sure PostgreSQL and Redis are running locally, then start the app:
 
 ```bash
-./mvnw -f backend/pom.xml spring-boot:run
+cd backend
+./mvnw spring-boot:run
 ```
 
 Run tests with:
 
 ```bash
+cd backend
 ./mvnw -U test
 ```
 
-Integration tests use Testcontainers with PostgreSQL and Redis, so Docker must be running before executing the full test suite. Running `./mvnw test` from the repo root now builds the workspace aggregator and executes the backend module tests.
+Integration tests use Testcontainers with PostgreSQL and Redis, so Docker must be running before executing the full test suite.

@@ -23,6 +23,8 @@ public final class ShortlinkMetrics {
     public static final String CACHE_UNKNOWN = "unknown";
     public static final String URL_TYPE_CUSTOM = "custom";
     public static final String URL_TYPE_GENERATED = "generated";
+    public static final String REDIRECT_CACHE_RESULT_REQUEST_ATTRIBUTE =
+            ShortlinkMetrics.class.getName() + ".redirect.cache_result";
 
     private ShortlinkMetrics() {
     }

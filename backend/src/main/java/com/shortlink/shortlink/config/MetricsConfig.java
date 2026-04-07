@@ -16,6 +16,8 @@ import org.springframework.data.redis.connection.stream.PendingMessagesSummary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
+import java.time.Duration;
+
 @Configuration
 public class MetricsConfig {
 
@@ -26,12 +28,12 @@ public class MetricsConfig {
     public MeterFilter redirectLatencyDistributionConfig() {
         DistributionStatisticConfig distributionConfig = DistributionStatisticConfig.builder()
                 .serviceLevelObjectives(
-                        0.001,
-                        0.005,
-                        0.010,
-                        0.050,
-                        0.100,
-                        0.500
+                        Duration.ofMillis(1).toNanos(),
+                        Duration.ofMillis(5).toNanos(),
+                        Duration.ofMillis(10).toNanos(),
+                        Duration.ofMillis(50).toNanos(),
+                        Duration.ofMillis(100).toNanos(),
+                        Duration.ofMillis(500).toNanos()
                 )
                 .build();
 

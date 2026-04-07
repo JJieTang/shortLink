@@ -1,6 +1,7 @@
 package com.shortlink.shortlink.controller;
 
 import com.shortlink.shortlink.exception.GlobalExceptionHandler;
+import com.shortlink.shortlink.config.RedirectMetricsFilter;
 import com.shortlink.shortlink.security.CurrentUserService;
 import com.shortlink.shortlink.service.ClickEventPublisher;
 import com.shortlink.shortlink.service.RateLimitService;
@@ -14,8 +15,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -46,8 +49,7 @@ class RedirectControllerTest {
         meterRegistry = new SimpleMeterRegistry();
         RedirectController redirectController = new RedirectController(
                 redirectService,
-                clickEventPublisher,
-                meterRegistry
+                clickEventPublisher
         );
         when(rateLimitService.checkRateLimit(anyString(), anyString(), any()))
                 .thenReturn(new RateLimitService.RateLimitDecision(true, 119, 0));
@@ -62,6 +64,7 @@ class RedirectControllerTest {
 
         mockMvc = MockMvcBuilders.standaloneSetup(redirectController)
                 .setControllerAdvice(new GlobalExceptionHandler())
+                .addFilters(new RedirectMetricsFilter(meterRegistry))
                 .addInterceptors(rateLimitInterceptor)
                 .build();
     }
@@ -102,7 +105,7 @@ class RedirectControllerTest {
     }
 
     @Test
-    void shouldStopRedirectLatencyTimerBeforePublishingClickEvent() throws Exception {
+    void shouldRecordEndToEndRedirectLatencyIncludingClickPublish() throws Exception {
         when(redirectService.resolveRedirectTarget("latency123")).thenReturn(
                 new RedirectService.RedirectTarget(
                         UUID.fromString("550e8400-e29b-41d4-a716-446655440010"),
@@ -112,14 +115,7 @@ class RedirectControllerTest {
                 )
         );
         doAnswer(invocation -> {
-            assertEquals(
-                    1L,
-                    meterRegistry.get(ShortlinkMetrics.REDIRECT_LATENCY)
-                            .tag(ShortlinkMetrics.STATUS_TAG, "302")
-                            .tag(ShortlinkMetrics.CACHE_RESULT_TAG, ShortlinkMetrics.CACHE_MISS)
-                            .timer()
-                            .count()
-            );
+            Thread.sleep(20);
             return null;
         }).when(clickEventPublisher).publish(any());
 
@@ -127,6 +123,13 @@ class RedirectControllerTest {
                 .andExpect(status().isFound())
                 .andExpect(header().string("Location", "https://example.com/latency"));
 
+        assertTrue(
+                meterRegistry.get(ShortlinkMetrics.REDIRECT_LATENCY)
+                        .tag(ShortlinkMetrics.STATUS_TAG, "302")
+                        .tag(ShortlinkMetrics.CACHE_RESULT_TAG, ShortlinkMetrics.CACHE_MISS)
+                        .timer()
+                        .totalTime(TimeUnit.MILLISECONDS) >= 20
+        );
         verify(clickEventPublisher).publish(any());
     }
 
@@ -144,5 +147,13 @@ class RedirectControllerTest {
         verify(rateLimitService).checkRateLimit(eq("public"), eq("ip:127.0.0.1"), any());
         verifyNoInteractions(redirectService);
         verifyNoInteractions(clickEventPublisher);
+        assertEquals(
+                1.0,
+                meterRegistry.get(ShortlinkMetrics.REDIRECTS_TOTAL)
+                        .tag(ShortlinkMetrics.STATUS_TAG, "429")
+                        .tag(ShortlinkMetrics.CACHE_RESULT_TAG, ShortlinkMetrics.CACHE_UNKNOWN)
+                        .counter()
+                        .count()
+        );
     }
 }

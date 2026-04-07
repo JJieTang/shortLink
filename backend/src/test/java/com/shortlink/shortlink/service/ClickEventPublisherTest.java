@@ -1,5 +1,6 @@
 package com.shortlink.shortlink.service;
 
+import com.shortlink.shortlink.config.ShortlinkMetrics;
 import com.shortlink.shortlink.event.ClickEventMessage;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -34,13 +35,12 @@ class ClickEventPublisherTest {
         stringRedisTemplate = mock(StringRedisTemplate.class);
         streamOperations = mock(StreamOperations.class);
         meterRegistry = new SimpleMeterRegistry();
-        Counter droppedEventsCounter = meterRegistry.counter("shortlink_click_events_dropped_total");
 
         when(stringRedisTemplate.opsForStream()).thenReturn(streamOperations);
 
         clickEventPublisher = new ClickEventPublisher(
                 stringRedisTemplate,
-                droppedEventsCounter,
+                meterRegistry,
                 "click-events",
                 100_000
         );
@@ -87,6 +87,7 @@ class ClickEventPublisherTest {
     }
 
     private Counter droppedEventsCounter() {
-        return meterRegistry.get("shortlink_click_events_dropped_total").counter();
+        Counter counter = meterRegistry.find(ShortlinkMetrics.DROPPED_EVENTS_TOTAL).counter();
+        return counter == null ? meterRegistry.counter(ShortlinkMetrics.DROPPED_EVENTS_TOTAL) : counter;
     }
 }

@@ -33,7 +33,7 @@ public class RedirectService {
 
         if (cachedUrl != null) {
             validateNotExpired(shortCode, cachedUrl.expiresAt());
-            return new RedirectTarget(cachedUrl.urlId(), shortCode, cachedUrl.originalUrl());
+            return new RedirectTarget(cachedUrl.urlId(), shortCode, cachedUrl.originalUrl(), true);
         }
 
         Url url = urlRepository.findByShortCodeAndIsActiveTrue(shortCode).orElseThrow(
@@ -43,7 +43,7 @@ public class RedirectService {
         validateNotExpired(shortCode, url.getExpiresAt());
         urlCacheService.cacheUrl(url);
 
-        return new RedirectTarget(url.getId(), url.getShortCode(), url.getOriginalUrl());
+        return new RedirectTarget(url.getId(), url.getShortCode(), url.getOriginalUrl(), false);
     }
 
     private void validateNotExpired(String shortCode, Instant expiresAt) {
@@ -52,6 +52,6 @@ public class RedirectService {
         }
     }
 
-    public record RedirectTarget(UUID urlId, String shortCode, String originalUrl) {
+    public record RedirectTarget(UUID urlId, String shortCode, String originalUrl, boolean cacheHit) {
     }
 }

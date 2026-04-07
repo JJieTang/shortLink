@@ -1,5 +1,6 @@
 package com.shortlink.shortlink.integration;
 
+import com.shortlink.shortlink.config.ShortlinkMetrics;
 import com.shortlink.shortlink.repository.ClickEventRepository;
 import com.shortlink.shortlink.repository.UrlRepository;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -58,9 +59,9 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void shouldKeepRedirectWorkingWhenRedisOperationsFail() throws Exception {
-        double redirectsBefore = meterRegistry.get("shortlink_redirects_total").counter().count();
-        double cacheMissesBefore = meterRegistry.get("shortlink_cache_misses_total").counter().count();
-        double droppedEventsBefore = meterRegistry.get("shortlink_click_events_dropped_total").counter().count();
+        double redirectsBefore = redirectCount("302", ShortlinkMetrics.CACHE_MISS);
+        double cacheMissesBefore = counterValue(ShortlinkMetrics.CACHE_MISSES_TOTAL);
+        double droppedEventsBefore = counterValue(ShortlinkMetrics.DROPPED_EVENTS_TOTAL);
 
         mockMvc.perform(post("/api/v1/urls")
                         .header("Authorization", bearer(ownerAccessToken))
@@ -80,9 +81,22 @@ class RedisDegradationIntegrationTest extends AbstractIntegrationTest {
 
         assertEquals(1L, urlRepository.count());
         assertEquals(0L, clickEventRepository.count());
-        assertEquals(redirectsBefore + 1.0, meterRegistry.get("shortlink_redirects_total").counter().count());
-        assertEquals(cacheMissesBefore + 1.0, meterRegistry.get("shortlink_cache_misses_total").counter().count());
-        assertEquals(droppedEventsBefore + 1.0, meterRegistry.get("shortlink_click_events_dropped_total").counter().count());
+        assertEquals(redirectsBefore + 1.0, redirectCount("302", ShortlinkMetrics.CACHE_MISS));
+        assertEquals(cacheMissesBefore + 1.0, counterValue(ShortlinkMetrics.CACHE_MISSES_TOTAL));
+        assertEquals(droppedEventsBefore + 1.0, counterValue(ShortlinkMetrics.DROPPED_EVENTS_TOTAL));
+    }
+
+    private double redirectCount(String status, String cacheResult) {
+        io.micrometer.core.instrument.Counter counter = meterRegistry.find(ShortlinkMetrics.REDIRECTS_TOTAL)
+                .tag(ShortlinkMetrics.STATUS_TAG, status)
+                .tag(ShortlinkMetrics.CACHE_RESULT_TAG, cacheResult)
+                .counter();
+        return counter == null ? 0.0 : counter.count();
+    }
+
+    private double counterValue(String name) {
+        io.micrometer.core.instrument.Counter counter = meterRegistry.find(name).counter();
+        return counter == null ? 0.0 : counter.count();
     }
 
     @TestConfiguration

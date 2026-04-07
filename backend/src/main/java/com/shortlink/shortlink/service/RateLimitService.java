@@ -1,10 +1,10 @@
 package com.shortlink.shortlink.service;
 
-import io.micrometer.core.instrument.Counter;
+import com.shortlink.shortlink.config.ShortlinkMetrics;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -24,25 +24,25 @@ public class RateLimitService {
     private static final RedisScript<List<Object>> RATE_LIMIT_SCRIPT = createRateLimitScript();
 
     private final StringRedisTemplate stringRedisTemplate;
-    private final Counter rateLimitedCounter;
+    private final MeterRegistry meterRegistry;
     private final String keyPrefix;
     private final Clock clock;
 
     @Autowired
     public RateLimitService(
             StringRedisTemplate stringRedisTemplate,
-            @Qualifier("rateLimitedCounter") Counter rateLimitedCounter,
+            MeterRegistry meterRegistry,
             @Value("${app.rate-limit.key-prefix}") String keyPrefix) {
-        this(stringRedisTemplate, rateLimitedCounter, keyPrefix, Clock.systemUTC());
+        this(stringRedisTemplate, meterRegistry, keyPrefix, Clock.systemUTC());
     }
 
     RateLimitService(
             StringRedisTemplate stringRedisTemplate,
-            Counter rateLimitedCounter,
+            MeterRegistry meterRegistry,
             String keyPrefix,
             Clock clock) {
         this.stringRedisTemplate = stringRedisTemplate;
-        this.rateLimitedCounter = rateLimitedCounter;
+        this.meterRegistry = meterRegistry;
         this.keyPrefix = keyPrefix;
         this.clock = clock;
     }
@@ -66,7 +66,10 @@ public class RateLimitService {
 
             RateLimitDecision decision = toDecision(result);
             if (!decision.allowed()) {
-                rateLimitedCounter.increment();
+                meterRegistry.counter(
+                        ShortlinkMetrics.RATE_LIMITED_TOTAL,
+                        ShortlinkMetrics.SCOPE_TAG, scope
+                ).increment();
             }
             return decision;
         } catch (Exception exception) {

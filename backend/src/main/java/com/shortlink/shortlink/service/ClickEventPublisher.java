@@ -1,10 +1,10 @@
 package com.shortlink.shortlink.service;
 
+import com.shortlink.shortlink.config.ShortlinkMetrics;
 import com.shortlink.shortlink.event.ClickEventMessage;
-import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.RedisStreamCommands;
 import org.springframework.data.redis.connection.stream.RecordId;
@@ -22,17 +22,17 @@ public class ClickEventPublisher {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final String streamKey;
-    private final Counter droppedEventsCounter;
+    private final MeterRegistry meterRegistry;
     private final RedisStreamCommands.XAddOptions xAddOptions;
 
     public ClickEventPublisher(
             StringRedisTemplate stringRedisTemplate,
-            @Qualifier("droppedEventsCounter") Counter droppedEventsCounter,
+            MeterRegistry meterRegistry,
             @Value("${app.click-stream.stream-key}") String streamKey,
             @Value("${app.click-stream.max-length}") long streamMaxLength) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.streamKey = streamKey;
-        this.droppedEventsCounter = droppedEventsCounter;
+        this.meterRegistry = meterRegistry;
         this.xAddOptions = RedisStreamCommands.XAddOptions.maxlen(streamMaxLength)
                 .approximateTrimming(true);
     }
@@ -52,7 +52,7 @@ public class ClickEventPublisher {
                     recordId
             );
         } catch (Exception exception) {
-            droppedEventsCounter.increment();
+            meterRegistry.counter(ShortlinkMetrics.DROPPED_EVENTS_TOTAL).increment();
             log.warn(
                     "Failed to publish click event {} for shortCode {}. Redirect flow will continue without analytics.",
                     eventMessage.eventId(),

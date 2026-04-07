@@ -3,7 +3,8 @@ package com.shortlink.shortlink.config;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.config.MeterFilter;
+import io.micrometer.core.instrument.distribution.DistributionStatisticConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,8 +16,6 @@ import org.springframework.data.redis.connection.stream.PendingMessagesSummary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
-import java.time.Duration;
-
 @Configuration
 public class MetricsConfig {
 
@@ -24,66 +23,49 @@ public class MetricsConfig {
     private static final StringRedisSerializer STRING_SERIALIZER = new StringRedisSerializer();
 
     @Bean
-    public Counter redirectsCounter(MeterRegistry meterRegistry) {
-        return Counter.builder("shortlink_redirects_total")
-                .description("Total number of successful short-link redirects")
-                .register(meterRegistry);
-    }
-
-    @Bean
-    public Timer redirectLatencyTimer(MeterRegistry meterRegistry) {
-        return Timer.builder("shortlink_redirect_latency_seconds")
-                .description("Latency of successful short-link redirects")
+    public MeterFilter redirectLatencyDistributionConfig() {
+        DistributionStatisticConfig distributionConfig = DistributionStatisticConfig.builder()
                 .serviceLevelObjectives(
-                        Duration.ofMillis(1),
-                        Duration.ofMillis(5),
-                        Duration.ofMillis(10),
-                        Duration.ofMillis(50),
-                        Duration.ofMillis(100),
-                        Duration.ofMillis(500)
+                        0.001,
+                        0.005,
+                        0.010,
+                        0.050,
+                        0.100,
+                        0.500
                 )
-                .register(meterRegistry);
-    }
+                .build();
 
-    @Bean
-    public Counter urlsCreatedCounter(MeterRegistry meterRegistry) {
-        return Counter.builder("shortlink_urls_created_total")
-                .description("Total number of successfully created short URLs")
-                .register(meterRegistry);
+        return new MeterFilter() {
+            @Override
+            public DistributionStatisticConfig configure(
+                    io.micrometer.core.instrument.Meter.Id id,
+                    DistributionStatisticConfig config) {
+                if (ShortlinkMetrics.REDIRECT_LATENCY.equals(id.getName())) {
+                    return distributionConfig.merge(config);
+                }
+                return config;
+            }
+        };
     }
 
     @Bean
     public Counter cacheHitsCounter(MeterRegistry meterRegistry) {
-        return Counter.builder("shortlink_cache_hits_total")
+        return Counter.builder(ShortlinkMetrics.CACHE_HITS_TOTAL)
                 .description("Redis URL cache hits")
                 .register(meterRegistry);
     }
 
     @Bean
     public Counter cacheMissesCounter(MeterRegistry meterRegistry) {
-        return Counter.builder("shortlink_cache_misses_total")
+        return Counter.builder(ShortlinkMetrics.CACHE_MISSES_TOTAL)
                 .description("Redis URL cache misses")
                 .register(meterRegistry);
     }
 
     @Bean
-    public Counter droppedEventsCounter(MeterRegistry meterRegistry) {
-        return Counter.builder("shortlink_click_events_dropped_total")
-                .description("Number of click events dropped because they could not be published")
-                .register(meterRegistry);
-    }
-
-    @Bean
     public Counter clickProcessingErrorsCounter(MeterRegistry meterRegistry) {
-        return Counter.builder("shortlink_click_processing_errors_total")
+        return Counter.builder(ShortlinkMetrics.CLICK_PROCESSING_ERRORS_TOTAL)
                 .description("Number of click-event processing failures before retry or DLQ handling")
-                .register(meterRegistry);
-    }
-
-    @Bean
-    public Counter rateLimitedCounter(MeterRegistry meterRegistry) {
-        return Counter.builder("shortlink_rate_limited_total")
-                .description("Total number of requests rejected by rate limiting")
                 .register(meterRegistry);
     }
 
@@ -92,7 +74,7 @@ public class MetricsConfig {
             MeterRegistry meterRegistry,
             StringRedisTemplate stringRedisTemplate,
             @Value("${app.click-stream.dlq-stream-key}") String dlqStreamKey) {
-        return Gauge.builder("shortlink_dlq_size", () -> readDlqSize(stringRedisTemplate, dlqStreamKey))
+        return Gauge.builder(ShortlinkMetrics.DLQ_SIZE, () -> readDlqSize(stringRedisTemplate, dlqStreamKey))
                 .description("Current number of click-event messages in the DLQ stream")
                 .register(meterRegistry);
     }
@@ -103,7 +85,7 @@ public class MetricsConfig {
             RedisConnectionFactory connectionFactory,
             @Value("${app.click-stream.stream-key}") String streamKey,
             @Value("${app.click-stream.consumer-group}") String consumerGroup) {
-        return Gauge.builder("shortlink_consumer_lag", () -> readConsumerLag(connectionFactory, streamKey, consumerGroup))
+        return Gauge.builder(ShortlinkMetrics.CONSUMER_LAG, () -> readConsumerLag(connectionFactory, streamKey, consumerGroup))
                 .description("Current number of pending click-event messages for the Redis Stream consumer group")
                 .register(meterRegistry);
     }

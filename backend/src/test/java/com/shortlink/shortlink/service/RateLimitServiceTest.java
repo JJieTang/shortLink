@@ -1,6 +1,6 @@
 package com.shortlink.shortlink.service;
 
-import io.micrometer.core.instrument.Counter;
+import com.shortlink.shortlink.config.ShortlinkMetrics;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,19 +27,17 @@ class RateLimitServiceTest {
 
     private StringRedisTemplate stringRedisTemplate;
     private SimpleMeterRegistry meterRegistry;
-    private Counter rateLimitedCounter;
     private RateLimitService rateLimitService;
 
     @BeforeEach
     void setUp() {
         stringRedisTemplate = mock(StringRedisTemplate.class);
         meterRegistry = new SimpleMeterRegistry();
-        rateLimitedCounter = meterRegistry.counter("shortlink_rate_limited_total");
         Clock fixedClock = Clock.fixed(Instant.parse("2026-04-02T12:00:00Z"), ZoneOffset.UTC);
 
         rateLimitService = new RateLimitService(
                 stringRedisTemplate,
-                rateLimitedCounter,
+                meterRegistry,
                 "rate-limit",
                 fixedClock
         );
@@ -59,7 +57,7 @@ class RateLimitServiceTest {
         assertTrue(decision.allowed());
         assertEquals(4L, decision.remainingTokens());
         assertEquals(0L, decision.retryAfterSeconds());
-        assertEquals(0.0, rateLimitedCounter.count());
+        assertEquals(0.0, rateLimitedCount("public"));
     }
 
     @Test
@@ -76,7 +74,7 @@ class RateLimitServiceTest {
         assertFalse(decision.allowed());
         assertEquals(0L, decision.remainingTokens());
         assertEquals(2L, decision.retryAfterSeconds());
-        assertEquals(1.0, rateLimitedCounter.count());
+        assertEquals(1.0, rateLimitedCount("admin"));
     }
 
     @Test
@@ -123,6 +121,13 @@ class RateLimitServiceTest {
         assertTrue(decision.allowed());
         assertEquals(8L, decision.remainingTokens());
         assertEquals(0L, decision.retryAfterSeconds());
-        assertEquals(0.0, rateLimitedCounter.count());
+        assertEquals(0.0, rateLimitedCount("public"));
+    }
+
+    private double rateLimitedCount(String scope) {
+        io.micrometer.core.instrument.Counter counter = meterRegistry.find(ShortlinkMetrics.RATE_LIMITED_TOTAL)
+                .tag(ShortlinkMetrics.SCOPE_TAG, scope)
+                .counter();
+        return counter == null ? 0.0 : counter.count();
     }
 }

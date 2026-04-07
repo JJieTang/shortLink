@@ -12,7 +12,7 @@ import com.shortlink.shortlink.security.CurrentUserService;
 import com.shortlink.shortlink.util.Base62Encoder;
 import com.shortlink.shortlink.util.ReservedWords;
 import com.shortlink.shortlink.util.UrlValidator;
-import io.micrometer.core.instrument.Counter;
+import com.shortlink.shortlink.config.ShortlinkMetrics;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,7 +50,6 @@ class UrlShorteningServiceTest {
         currentUserService = mock(CurrentUserService.class);
         urlCacheService = mock(UrlCacheService.class);
         meterRegistry = new SimpleMeterRegistry();
-        Counter urlsCreatedCounter = meterRegistry.counter("shortlink_urls_created_total");
         urlShorteningService = new UrlShorteningService(
                 base62Encoder,
                 urlRepository,
@@ -58,7 +57,7 @@ class UrlShorteningServiceTest {
                 new UrlValidator(),
                 new ReservedWords(),
                 urlCacheService,
-                urlsCreatedCounter,
+                meterRegistry,
                 "http://localhost:8080"
         );
     }
@@ -83,7 +82,13 @@ class UrlShorteningServiceTest {
         assertEquals(0L, created.getTotalClicks());
         verify(urlRepository).save(any(Url.class));
         verify(urlCacheService).cacheUrl(created);
-        assertEquals(1.0, meterRegistry.get("shortlink_urls_created_total").counter().count());
+        assertEquals(
+                1.0,
+                meterRegistry.get(ShortlinkMetrics.URLS_CREATED_TOTAL)
+                        .tag(ShortlinkMetrics.URL_TYPE_TAG, ShortlinkMetrics.URL_TYPE_GENERATED)
+                        .counter()
+                        .count()
+        );
     }
 
     @Test

@@ -8,13 +8,13 @@ import com.shortlink.shortlink.security.CurrentUserService;
 import com.shortlink.shortlink.util.Base62Encoder;
 import com.shortlink.shortlink.util.ReservedWords;
 import com.shortlink.shortlink.util.UrlValidator;
+import com.shortlink.shortlink.config.ShortlinkMetrics;
 import com.shortlink.shortlink.exception.ResourceNotFoundException;
 import com.shortlink.shortlink.exception.InvalidRequestException;
 import com.shortlink.shortlink.exception.AliasTakenException;
 import com.shortlink.shortlink.exception.InvalidAliasException;
 import com.shortlink.shortlink.exception.ShortCodeGenerationException;
-import io.micrometer.core.instrument.Counter;
-import org.springframework.beans.factory.annotation.Qualifier;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -34,7 +34,7 @@ public class UrlShorteningService {
     private final UrlValidator urlValidator;
     private final ReservedWords reservedWords;
     private final UrlCacheService urlCacheService;
-    private final Counter urlsCreatedCounter;
+    private final MeterRegistry meterRegistry;
     private final String baseUrl;
 
     public UrlShorteningService(
@@ -44,7 +44,7 @@ public class UrlShorteningService {
             UrlValidator urlValidator,
             ReservedWords reservedWords,
             UrlCacheService urlCacheService,
-            @Qualifier("urlsCreatedCounter") Counter urlsCreatedCounter,
+            MeterRegistry meterRegistry,
             @Value("${app.base-url:http://localhost:8080}") String baseUrl) {
         this.base62Encoder = base62Encoder;
         this.urlRepository = urlRepository;
@@ -52,7 +52,7 @@ public class UrlShorteningService {
         this.urlValidator = urlValidator;
         this.reservedWords = reservedWords;
         this.urlCacheService = urlCacheService;
-        this.urlsCreatedCounter = urlsCreatedCounter;
+        this.meterRegistry = meterRegistry;
         this.baseUrl = baseUrl;
     }
 
@@ -75,7 +75,13 @@ public class UrlShorteningService {
 
         Url savedUrl = urlRepository.save(url);
         urlCacheService.cacheUrl(savedUrl);
-        urlsCreatedCounter.increment();
+        meterRegistry.counter(
+                ShortlinkMetrics.URLS_CREATED_TOTAL,
+                ShortlinkMetrics.URL_TYPE_TAG,
+                request.customAlias() == null || request.customAlias().isBlank()
+                        ? ShortlinkMetrics.URL_TYPE_GENERATED
+                        : ShortlinkMetrics.URL_TYPE_CUSTOM
+        ).increment();
         return savedUrl;
     }
 

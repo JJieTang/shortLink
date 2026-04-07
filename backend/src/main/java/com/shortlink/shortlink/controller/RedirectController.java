@@ -1,12 +1,13 @@
 package com.shortlink.shortlink.controller;
 
+import com.shortlink.shortlink.config.ShortlinkMetrics;
 import com.shortlink.shortlink.event.ClickEventMessage;
+import com.shortlink.shortlink.exception.BaseException;
 import com.shortlink.shortlink.service.ClickEventPublisher;
 import com.shortlink.shortlink.service.RedirectService;
-import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,26 +24,35 @@ public class RedirectController {
 
     private final RedirectService redirectService;
     private final ClickEventPublisher clickEventPublisher;
-    private final Counter redirectsCounter;
-    private final Timer redirectLatencyTimer;
+    private final MeterRegistry meterRegistry;
 
     public RedirectController(
             RedirectService redirectService,
             ClickEventPublisher clickEventPublisher,
-            @Qualifier("redirectsCounter") Counter redirectsCounter,
-            @Qualifier("redirectLatencyTimer") Timer redirectLatencyTimer
+            MeterRegistry meterRegistry
     ) {
         this.redirectService = redirectService;
         this.clickEventPublisher = clickEventPublisher;
-        this.redirectsCounter = redirectsCounter;
-        this.redirectLatencyTimer = redirectLatencyTimer;
+        this.meterRegistry = meterRegistry;
     }
 
     @GetMapping("/{shortCode}")
     public ResponseEntity<Void> redirect(@PathVariable String shortCode, HttpServletRequest request) {
-        Timer.Sample sample = Timer.start();
-        RedirectService.RedirectTarget redirectTarget = redirectService.resolveRedirectTarget(shortCode);
-        sample.stop(redirectLatencyTimer);
+        Timer.Sample sample = Timer.start(meterRegistry);
+        RedirectService.RedirectTarget redirectTarget;
+
+        try {
+            redirectTarget = redirectService.resolveRedirectTarget(shortCode);
+        } catch (BaseException exception) {
+            recordRedirectMetrics(Integer.toString(exception.getStatus()), ShortlinkMetrics.CACHE_UNKNOWN, sample);
+            throw exception;
+        } catch (RuntimeException exception) {
+            recordRedirectMetrics(Integer.toString(HttpStatus.INTERNAL_SERVER_ERROR.value()), ShortlinkMetrics.CACHE_UNKNOWN, sample);
+            throw exception;
+        }
+
+        String cacheResult = redirectTarget.cacheHit() ? ShortlinkMetrics.CACHE_HIT : ShortlinkMetrics.CACHE_MISS;
+        recordRedirectMetrics(Integer.toString(HttpStatus.FOUND.value()), cacheResult, sample);
 
         clickEventPublisher.publish(new ClickEventMessage(
                 UUID.randomUUID(),
@@ -54,11 +64,26 @@ public class RedirectController {
                 request.getHeader(HttpHeaders.USER_AGENT),
                 resolveTraceId(request)
         ));
-        redirectsCounter.increment();
 
         return ResponseEntity.status(HttpStatus.FOUND)
                 .header(HttpHeaders.LOCATION, URI.create(redirectTarget.originalUrl()).toString())
                 .build();
+    }
+
+    private void recordRedirectMetrics(String status, String cacheResult, Timer.Sample sample) {
+        sample.stop(Timer.builder(ShortlinkMetrics.REDIRECT_LATENCY)
+                .description("Latency of short-link redirect requests")
+                .tags(
+                        ShortlinkMetrics.STATUS_TAG, status,
+                        ShortlinkMetrics.CACHE_RESULT_TAG, cacheResult
+                )
+                .register(meterRegistry));
+
+        meterRegistry.counter(
+                ShortlinkMetrics.REDIRECTS_TOTAL,
+                ShortlinkMetrics.STATUS_TAG, status,
+                ShortlinkMetrics.CACHE_RESULT_TAG, cacheResult
+        ).increment();
     }
 
     private String resolveClientIp(HttpServletRequest request) {

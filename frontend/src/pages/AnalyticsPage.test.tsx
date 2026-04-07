@@ -7,6 +7,17 @@ import { renderWithAppProviders } from "@/test/testUtils";
 const listShortUrls = vi.fn();
 const getUrlAnalytics = vi.fn();
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+
+  return { promise, resolve, reject };
+}
+
 vi.mock("@/api/urls", async () => {
   const actual = await vi.importActual<typeof import("@/api/urls")>("@/api/urls");
   return {
@@ -81,6 +92,51 @@ describe("AnalyticsPage", () => {
     expect(getUrlAnalytics).not.toHaveBeenCalled();
   });
 
+  it("disables the filter action while the initial analytics load is in flight", async () => {
+    const shortCodesRequest = deferred<{ content: { shortCode: string }[] }>();
+    const analyticsRequest = deferred<{
+      shortCode: string;
+      totalClicks: number;
+      periodClicks: number;
+      uniqueClicks: number;
+      clicksByDate: { date: string; clicks: number }[];
+    }>();
+
+    listShortUrls.mockReturnValue(shortCodesRequest.promise);
+    getUrlAnalytics.mockReturnValue(analyticsRequest.promise);
+
+    renderWithAppProviders(<AnalyticsPage />);
+
+    const loadingButton = screen.getByRole("button", { name: /loading analytics/i });
+    expect(loadingButton).toBeDisabled();
+
+    shortCodesRequest.resolve({
+      content: [{ shortCode: "report-link" }],
+    });
+
+    await waitFor(() => {
+      expect(getUrlAnalytics).toHaveBeenCalledWith(
+        "report-link",
+        expect.any(String),
+        expect.any(String),
+      );
+    });
+
+    expect(screen.getByRole("button", { name: /loading analytics/i })).toBeDisabled();
+
+    analyticsRequest.resolve({
+      shortCode: "report-link",
+      totalClicks: 1542,
+      periodClicks: 229,
+      uniqueClicks: 163,
+      clicksByDate: [{ date: "2026-03-24", clicks: 87 }],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /load analytics/i })).toBeEnabled();
+    });
+  });
+
   it("reloads analytics when the user submits new filters", async () => {
     const user = userEvent.setup();
     listShortUrls.mockResolvedValue({
@@ -120,6 +176,53 @@ describe("AnalyticsPage", () => {
       expect.any(String),
       expect.any(String),
     );
+  });
+
+  it("shows a loading action state when the user requests a refreshed analytics report", async () => {
+    const user = userEvent.setup();
+    const refreshRequest = deferred<{
+      shortCode: string;
+      totalClicks: number;
+      periodClicks: number;
+      uniqueClicks: number;
+      clicksByDate: { date: string; clicks: number }[];
+    }>();
+
+    listShortUrls.mockResolvedValue({
+      content: [{ shortCode: "report-link" }, { shortCode: "spring-link" }],
+    });
+    getUrlAnalytics
+      .mockResolvedValueOnce({
+        shortCode: "report-link",
+        totalClicks: 20,
+        periodClicks: 10,
+        uniqueClicks: 5,
+        clicksByDate: [],
+      })
+      .mockReturnValueOnce(refreshRequest.promise);
+
+    renderWithAppProviders(<AnalyticsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /load analytics/i })).toBeEnabled();
+    });
+
+    await user.selectOptions(screen.getByLabelText(/short code/i), "spring-link");
+    await user.click(screen.getByRole("button", { name: /load analytics/i }));
+
+    expect(screen.getByRole("button", { name: /loading analytics/i })).toBeDisabled();
+
+    refreshRequest.resolve({
+      shortCode: "spring-link",
+      totalClicks: 40,
+      periodClicks: 18,
+      uniqueClicks: 11,
+      clicksByDate: [],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /load analytics/i })).toBeEnabled();
+    });
   });
 
   it("shows the chart empty state when analytics has no daily click points", async () => {

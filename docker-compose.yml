@@ -30,7 +30,7 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-shortlink}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      JWT_SECRET: ${JWT_SECRET:-shortlink-demo-secret-key-2026}
+      JWT_SECRET: ${JWT_SECRET:-shortlink-demo-secret-key-2026-safe}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
       GEOIP_DB_PATH: ${GEOIP_DB_PATH:-}
@@ -83,6 +83,7 @@ services:
       - "${GRAFANA_PORT:-3001}:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       prometheus:
         condition: service_started

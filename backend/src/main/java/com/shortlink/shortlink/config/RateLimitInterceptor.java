@@ -1,6 +1,7 @@
 package com.shortlink.shortlink.config;
 
 import com.shortlink.shortlink.exception.RateLimitedException;
+import com.shortlink.shortlink.exception.UnauthorizedException;
 import com.shortlink.shortlink.security.CurrentUserService;
 import com.shortlink.shortlink.service.RateLimitService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -42,7 +43,11 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         RateLimitService.RateLimitDecision decision;
 
         if (isManagementRequest(requestUri)) {
-            UUID userId = currentUserService.getCurrentUserId();
+            UUID userId = resolveCurrentUserId();
+            if (userId == null) {
+                return true;
+            }
+
             decision = rateLimitService.checkRateLimit(
                     MANAGEMENT_SCOPE,
                     "user:" + userId,
@@ -61,6 +66,14 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         }
 
         return true;
+    }
+
+    private UUID resolveCurrentUserId() {
+        try {
+            return currentUserService.getCurrentUserId();
+        } catch (UnauthorizedException exception) {
+            return null;
+        }
     }
 
     private boolean isManagementRequest(String requestUri) {

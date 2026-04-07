@@ -5,6 +5,7 @@ import com.shortlink.shortlink.event.ClickEventMessage;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.RedisStreamCommands;
 import org.springframework.data.redis.connection.stream.RecordId;
@@ -14,6 +15,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 
 @Service
 public class ClickEventPublisher {
@@ -24,13 +27,16 @@ public class ClickEventPublisher {
     private final String streamKey;
     private final MeterRegistry meterRegistry;
     private final RedisStreamCommands.XAddOptions xAddOptions;
+    private final Executor clickEventExecutor;
 
     public ClickEventPublisher(
             StringRedisTemplate stringRedisTemplate,
+            @Qualifier("clickEventExecutor") Executor clickEventExecutor,
             MeterRegistry meterRegistry,
             @Value("${app.click-stream.stream-key}") String streamKey,
             @Value("${app.click-stream.max-length}") long streamMaxLength) {
         this.stringRedisTemplate = stringRedisTemplate;
+        this.clickEventExecutor = clickEventExecutor;
         this.streamKey = streamKey;
         this.meterRegistry = meterRegistry;
         this.xAddOptions = RedisStreamCommands.XAddOptions.maxlen(streamMaxLength)
@@ -38,6 +44,21 @@ public class ClickEventPublisher {
     }
 
     public void publish(ClickEventMessage eventMessage) {
+        try {
+            clickEventExecutor.execute(() -> publishToStream(eventMessage));
+        } catch (RejectedExecutionException exception) {
+            meterRegistry.counter(ShortlinkMetrics.DROPPED_EVENTS_TOTAL).increment();
+            if (log.isDebugEnabled()) {
+                log.debug(
+                        "Dropping click event {} for shortCode {} because the async publish queue is saturated.",
+                        eventMessage.eventId(),
+                        eventMessage.shortCode()
+                );
+            }
+        }
+    }
+
+    private void publishToStream(ClickEventMessage eventMessage) {
         try {
             RecordId recordId = stringRedisTemplate.opsForStream().add(
                     StreamRecords.mapBacked(toPayload(eventMessage)).withStreamKey(streamKey),

@@ -14,6 +14,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -28,6 +30,7 @@ class ClickEventPublisherTest {
     private StreamOperations<String, Object, Object> streamOperations;
     private SimpleMeterRegistry meterRegistry;
     private ClickEventPublisher clickEventPublisher;
+    private Executor directExecutor;
 
     @BeforeEach
     @SuppressWarnings("unchecked")
@@ -35,11 +38,13 @@ class ClickEventPublisherTest {
         stringRedisTemplate = mock(StringRedisTemplate.class);
         streamOperations = mock(StreamOperations.class);
         meterRegistry = new SimpleMeterRegistry();
+        directExecutor = Runnable::run;
 
         when(stringRedisTemplate.opsForStream()).thenReturn(streamOperations);
 
         clickEventPublisher = new ClickEventPublisher(
                 stringRedisTemplate,
+                directExecutor,
                 meterRegistry,
                 "click-events",
                 100_000
@@ -68,6 +73,24 @@ class ClickEventPublisherTest {
         ClickEventMessage eventMessage = sampleEventMessage();
         when(streamOperations.add(any(), any(RedisStreamCommands.XAddOptions.class)))
                 .thenThrow(new RuntimeException("Redis unavailable"));
+
+        assertDoesNotThrow(() -> clickEventPublisher.publish(eventMessage));
+        assertEquals(1.0, droppedEventsCounter().count());
+    }
+
+    @Test
+    void shouldIncrementDroppedMetricWhenExecutorRejectsPublishTask() {
+        ClickEventMessage eventMessage = sampleEventMessage();
+        Executor rejectingExecutor = command -> {
+            throw new RejectedExecutionException("Executor saturated");
+        };
+        clickEventPublisher = new ClickEventPublisher(
+                stringRedisTemplate,
+                rejectingExecutor,
+                meterRegistry,
+                "click-events",
+                100_000
+        );
 
         assertDoesNotThrow(() -> clickEventPublisher.publish(eventMessage));
         assertEquals(1.0, droppedEventsCounter().count());

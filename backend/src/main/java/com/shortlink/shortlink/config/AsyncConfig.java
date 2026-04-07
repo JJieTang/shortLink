@@ -1,5 +1,6 @@
 package com.shortlink.shortlink.config;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,6 +13,7 @@ public class AsyncConfig {
 
     @Bean(name = "clickEventExecutor")
     public Executor clickEventExecutor(
+            MeterRegistry meterRegistry,
             @Value("${app.async.click-event.core-pool-size:2}") int corePoolSize,
             @Value("${app.async.click-event.max-pool-size:4}") int maxPoolSize,
             @Value("${app.async.click-event.queue-capacity:200}") int queueCapacity,
@@ -24,6 +26,10 @@ public class AsyncConfig {
         executor.setThreadNamePrefix(threadNamePrefix);
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(awaitTerminationSeconds);
+        // Under overload we prefer preserving redirect latency over analytics completeness.
+        executor.setRejectedExecutionHandler((task, rejectedExecutor) ->
+                meterRegistry.counter(ShortlinkMetrics.DROPPED_EVENTS_TOTAL).increment()
+        );
         executor.initialize();
         return executor;
     }

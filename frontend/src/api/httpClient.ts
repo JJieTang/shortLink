@@ -1,7 +1,7 @@
 import { ApiError, type ApiErrorPayload } from "@/types/api";
 import { readAccessToken } from "./sessionStore";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS ?? 10000);
 
 type JsonPrimitive = string | number | boolean | null;
@@ -60,7 +60,7 @@ async function request<T>(path: string, options: InternalRequestOptions = {}): P
   }, timeoutMs);
 
   try {
-    const response = await fetch(new URL(path, API_BASE_URL), {
+    const response = await fetch(resolveRequestUrl(path), {
       ...options,
       headers,
       signal: controller.signal,
@@ -100,6 +100,14 @@ async function request<T>(path: string, options: InternalRequestOptions = {}): P
     window.clearTimeout(timeoutId);
     detachSignal();
   }
+}
+
+function resolveRequestUrl(path: string) {
+  if (!API_BASE_URL) {
+    return path;
+  }
+
+  return new URL(path, API_BASE_URL);
 }
 
 async function safeJson(response: Response) {

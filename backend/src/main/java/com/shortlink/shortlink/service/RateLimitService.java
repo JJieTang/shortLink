@@ -21,7 +21,7 @@ public class RateLimitService {
 
     private static final Logger log = LoggerFactory.getLogger(RateLimitService.class);
 
-    private static final RedisScript<List> RATE_LIMIT_SCRIPT = createRateLimitScript();
+    private static final RedisScript<List<Object>> RATE_LIMIT_SCRIPT = createRateLimitScript();
 
     private final StringRedisTemplate stringRedisTemplate;
     private final Counter rateLimitedCounter;
@@ -56,7 +56,7 @@ public class RateLimitService {
         long nowMillis = clock.millis();
 
         try {
-            List<?> result = stringRedisTemplate.execute(
+            List<Object> result = stringRedisTemplate.execute(
                     RATE_LIMIT_SCRIPT,
                     List.of(redisKey),
                     Long.toString(policy.capacity()),
@@ -80,7 +80,7 @@ public class RateLimitService {
         }
     }
 
-    private RateLimitDecision toDecision(List<?> result) {
+    private RateLimitDecision toDecision(List<Object> result) {
         if (result == null || result.size() < 3) {
             throw new IllegalStateException("Redis rate-limit script returned an invalid response");
         }
@@ -114,9 +114,11 @@ public class RateLimitService {
         }
     }
 
-    private static RedisScript<List> createRateLimitScript() {
-        DefaultRedisScript<List> redisScript = new DefaultRedisScript<>();
-        redisScript.setResultType(List.class);
+    @SuppressWarnings("unchecked")
+    private static RedisScript<List<Object>> createRateLimitScript() {
+        DefaultRedisScript<List<Object>> redisScript = new DefaultRedisScript<>();
+        // RedisScript only accepts a raw Class token here because generic List element types are erased at runtime.
+        redisScript.setResultType((Class<List<Object>>) (Class<?>) List.class);
         redisScript.setScriptText("""
                 local key = KEYS[1]
                 local capacity = tonumber(ARGV[1])

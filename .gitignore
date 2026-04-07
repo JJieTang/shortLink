@@ -44,6 +44,7 @@ out/
 ### Local Environment Files ###
 .env
 .env.*
+!frontend/.env.example
 
 ### Frontend Build Output ###
 frontend/node_modules/

@@ -7,6 +7,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const devHost = env.VITE_DEV_HOST || "localhost";
   const previewHost = env.VITE_PREVIEW_HOST || devHost;
+  const devProxyTarget = env.VITE_DEV_PROXY_TARGET || "http://localhost:8080";
 
   return {
     plugins: [react()],
@@ -18,6 +19,12 @@ export default defineConfig(({ mode }) => {
     server: {
       host: devHost,
       port: 3000,
+      proxy: {
+        "/api": {
+          target: devProxyTarget,
+          changeOrigin: true,
+        },
+      },
     },
     preview: {
       host: previewHost,

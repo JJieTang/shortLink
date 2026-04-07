@@ -65,6 +65,7 @@ describe("AnalyticsPage", () => {
     expect(screen.getByText("163")).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "report-link" })).toBeInTheDocument();
     expect(screen.getByText(/clicks by date/i)).toBeInTheDocument();
+    expect(document.querySelector(".recharts-wrapper")).not.toBeNull();
   });
 
   it("shows an empty-state message when there are no short links", async () => {

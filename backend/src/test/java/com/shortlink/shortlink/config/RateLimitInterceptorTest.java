@@ -69,4 +69,19 @@ class RateLimitInterceptorTest {
         assertTrue(allowed);
         verify(rateLimitService).checkRateLimit(eq("management"), eq("user:" + userId), any());
     }
+
+    @Test
+    void shouldApplyPublicRateLimitToAuthEndpointsByIp() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getRequestURI()).thenReturn("/api/v1/auth/login");
+        when(request.getRemoteAddr()).thenReturn("203.0.113.5");
+        when(rateLimitService.checkRateLimit(any(), any(), any()))
+                .thenReturn(new RateLimitService.RateLimitDecision(true, 119, 0));
+
+        boolean allowed = interceptor.preHandle(request, response, new Object());
+
+        assertTrue(allowed);
+        verify(rateLimitService).checkRateLimit(eq("public"), eq("ip:203.0.113.5"), any());
+        verifyNoInteractions(currentUserService);
+    }
 }

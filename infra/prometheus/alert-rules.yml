@@ -1,0 +1,72 @@
+groups:
+  - name: shortlink-phase6
+    rules:
+      - alert: ShortlinkRedirectLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le) (
+              rate(shortlink_redirect_latency_seconds_bucket{application="shortlink", status="302"}[5m])
+            )
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Redirect p99 latency is above 100ms
+          description: Redirect p99 latency has stayed above 100ms for 5 minutes.
+
+      - alert: ShortlinkRedirectErrorsHigh
+        expr: |
+          (
+            sum(rate(shortlink_redirects_total{application="shortlink", status=~"5.."}[3m]))
+            /
+            clamp_min(sum(rate(shortlink_redirects_total{application="shortlink"}[3m])), 0.000001)
+          ) > 0.01
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: Redirect 5xx ratio is above 1%
+          description: Redirect 5xx responses have exceeded 1% for 3 minutes.
+
+      - alert: ShortlinkDbConnectionsHigh
+        expr: |
+          (
+            hikaricp_connections_active{application="shortlink"}
+            /
+            clamp_min(hikaricp_connections_max{application="shortlink"}, 1)
+          ) > 0.8
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: HikariCP active connections exceed 80% of pool size
+          description: Database connection usage has stayed above 80% for 5 minutes.
+
+      - alert: ShortlinkConsumerLagHigh
+        expr: shortlink_consumer_lag{application="shortlink"} > 10000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Click-event consumer lag is above 10,000
+          description: Redis Stream consumer lag has stayed above 10,000 for 10 minutes.
+
+      - alert: ShortlinkDlqGrowing
+        expr: shortlink_dlq_size{application="shortlink"} > 100
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: DLQ size is above 100
+          description: Click-event DLQ size has stayed above 100 for 15 minutes.
+
+      - alert: ShortlinkDroppedEventsIncreasing
+        expr: increase(shortlink_dropped_events_total{application="shortlink"}[15m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Dropped analytics events are increasing
+          description: The system has dropped analytics events during the last 15 minutes.

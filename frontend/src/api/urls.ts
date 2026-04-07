@@ -1,3 +1,4 @@
+import { requireResponseBody } from "@/api/apiUtils";
 import { httpClient } from "@/api/httpClient";
 import type {
   CreateShortUrlRequest,
@@ -31,17 +32,4 @@ export function deleteShortUrl(shortCode: string) {
   return httpClient.delete<void>(`/api/v1/urls/${shortCode}`, {
     auth: true,
   });
-}
-
-async function requireResponseBody<T>(
-  responsePromise: Promise<T | undefined>,
-  message: string,
-) {
-  const response = await responsePromise;
-
-  if (response === undefined) {
-    throw new Error(message);
-  }
-
-  return response;
 }

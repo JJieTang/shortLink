@@ -9,14 +9,10 @@ import { ModeButton } from "@/components/auth/authUi";
 import { useAuthSessionContext } from "@/context/AuthSessionContext";
 import { ApiError } from "@/types/api";
 import type { AuthSession } from "@/types/auth";
+import type { FeedbackState } from "@/types/feedback";
+import { toFeedbackErrorMessage } from "@/utils/errorMessage";
 
 type AuthMode = "login" | "register";
-type FeedbackTone = "success" | "error" | "info";
-
-interface FeedbackState {
-  tone: FeedbackTone;
-  message: string;
-}
 
 interface AuthFormsState {
   login: {
@@ -107,7 +103,10 @@ export function AuthPage() {
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: toMessage(error, "Login failed. Please try again."),
+        message: toFeedbackErrorMessage(error, {
+          fallback: "Login failed. Please try again.",
+          timeoutMessage: "The login request took too long. Please try again.",
+        }),
       });
     } finally {
       setIsSubmitting(false);
@@ -136,7 +135,10 @@ export function AuthPage() {
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: toMessage(error, "Registration failed. Please review your inputs."),
+        message: toFeedbackErrorMessage(error, {
+          fallback: "Registration failed. Please review your inputs.",
+          timeoutMessage: "The registration request took too long. Please try again.",
+        }),
       });
     } finally {
       setIsSubmitting(false);
@@ -181,8 +183,14 @@ export function AuthPage() {
       setFeedback({
         tone: "error",
         message: shouldSignOut
-          ? `${toMessage(error, "Session refresh failed.")} You have been signed out.`
-          : toMessage(error, "Session refresh failed. Please try again."),
+          ? `${toFeedbackErrorMessage(error, {
+              fallback: "Session refresh failed.",
+              timeoutMessage: "The refresh request took too long. Please try again.",
+            })} You have been signed out.`
+          : toFeedbackErrorMessage(error, {
+              fallback: "Session refresh failed. Please try again.",
+              timeoutMessage: "The refresh request took too long. Please try again.",
+            }),
       });
     } finally {
       setIsSubmitting(false);
@@ -323,8 +331,4 @@ function authFormsReducer(state: AuthFormsState, action: AuthFormsAction): AuthF
 
 function shouldClearSessionOnRefreshFailure(error: unknown) {
   return error instanceof ApiError && error.status >= 400 && error.status < 500;
-}
-
-function toMessage(error: unknown, fallback: string) {
-  return error instanceof ApiError ? error.message : fallback;
 }

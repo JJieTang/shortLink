@@ -6,9 +6,9 @@ import {
   UrlInputForm,
   type UrlInputValues,
 } from "@/components/links/UrlInputForm";
-import { MissingAccessTokenError, RequestTimeoutError } from "@/api/httpClient";
-import { ApiError } from "@/types/api";
+import type { FeedbackState } from "@/types/feedback";
 import type { PageResponse, ShortUrlRecord } from "@/types/url";
+import { toFeedbackErrorMessage } from "@/utils/errorMessage";
 
 const INITIAL_VALUES: UrlInputValues = {
   originalUrl: "",
@@ -16,11 +16,6 @@ const INITIAL_VALUES: UrlInputValues = {
   expiresAt: "",
 };
 const PAGE_SIZE = 5;
-
-interface FeedbackState {
-  tone: "success" | "error" | "info";
-  message: string;
-}
 
 export function LinksPage() {
   const [values, setValues] = useState<UrlInputValues>(INITIAL_VALUES);
@@ -67,7 +62,10 @@ export function LinksPage() {
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: toMessage(error),
+        message: toFeedbackErrorMessage(error, {
+          fallback: "Links request failed. Please try again.",
+          timeoutMessage: "The links request took too long. Please try again.",
+        }),
       });
     } finally {
       setIsSubmitting(false);
@@ -126,7 +124,10 @@ export function LinksPage() {
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: toMessage(error),
+        message: toFeedbackErrorMessage(error, {
+          fallback: "Links request failed. Please try again.",
+          timeoutMessage: "The links request took too long. Please try again.",
+        }),
       });
     } finally {
       setDeletingShortCode(null);
@@ -149,7 +150,10 @@ export function LinksPage() {
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: toMessage(error),
+        message: toFeedbackErrorMessage(error, {
+          fallback: "Links request failed. Please try again.",
+          timeoutMessage: "The links request took too long. Please try again.",
+        }),
       });
     } finally {
       setIsHistoryLoading(false);
@@ -234,20 +238,4 @@ function toIsoString(value: string) {
   }
 
   return new Date(value).toISOString();
-}
-
-function toMessage(error: unknown) {
-  if (error instanceof ApiError) {
-    return error.message;
-  }
-
-  if (error instanceof MissingAccessTokenError) {
-    return "Your session is missing. Please sign in again.";
-  }
-
-  if (error instanceof RequestTimeoutError) {
-    return "The create request took too long. Please try again.";
-  }
-
-  return "Create URL failed. Please try again.";
 }

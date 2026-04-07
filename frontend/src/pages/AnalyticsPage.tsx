@@ -4,9 +4,9 @@ import { listShortUrls } from "@/api/urls";
 import { AnalyticsFilters } from "@/components/analytics/AnalyticsFilters";
 import { AnalyticsSummaryCards } from "@/components/analytics/AnalyticsSummaryCards";
 import { AnalyticsTrendChart } from "@/components/analytics/AnalyticsTrendChart";
-import { MissingAccessTokenError, RequestTimeoutError } from "@/api/httpClient";
-import { ApiError } from "@/types/api";
 import type { UrlAnalytics } from "@/types/analytics";
+import type { FeedbackState } from "@/types/feedback";
+import { toFeedbackErrorMessage } from "@/utils/errorMessage";
 
 export function AnalyticsPage() {
   const [availableShortCodes, setAvailableShortCodes] = useState<string[]>([]);
@@ -46,7 +46,10 @@ export function AnalyticsPage() {
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: toMessage(error),
+        message: toFeedbackErrorMessage(error, {
+          fallback: "Analytics request failed. Please try again.",
+          timeoutMessage: "The analytics request took too long. Please try again.",
+        }),
       });
     } finally {
       setIsLoading(false);
@@ -71,7 +74,10 @@ export function AnalyticsPage() {
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: toMessage(error),
+        message: toFeedbackErrorMessage(error, {
+          fallback: "Analytics request failed. Please try again.",
+          timeoutMessage: "The analytics request took too long. Please try again.",
+        }),
       });
     } finally {
       setIsLoading(false);
@@ -137,11 +143,6 @@ export function AnalyticsPage() {
   );
 }
 
-interface FeedbackState {
-  tone: "info" | "error";
-  message: string;
-}
-
 function defaultFromDate() {
   const value = new Date();
   value.setDate(value.getDate() - 6);
@@ -163,20 +164,4 @@ async function safeAnalyticsRequest(
   toDate: string,
 ) {
   return getUrlAnalytics(shortCode, fromDate, toDate);
-}
-
-function toMessage(error: unknown) {
-  if (error instanceof ApiError) {
-    return error.message;
-  }
-
-  if (error instanceof MissingAccessTokenError) {
-    return "Your session is missing. Please sign in again.";
-  }
-
-  if (error instanceof RequestTimeoutError) {
-    return "The analytics request took too long. Please try again.";
-  }
-
-  return "Analytics request failed. Please try again.";
 }

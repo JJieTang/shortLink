@@ -1,3 +1,4 @@
+import { requireResponseBody } from "@/api/apiUtils";
 import { httpClient } from "@/api/httpClient";
 import type {
   AuthResponse,
@@ -26,17 +27,4 @@ export function refreshSessionToken(payload: RefreshTokenRequest) {
     httpClient.post<AuthResponse>("/api/v1/auth/refresh", payload),
     "Refresh response body was empty.",
   );
-}
-
-async function requireResponseBody<T>(
-  responsePromise: Promise<T | undefined>,
-  message: string,
-) {
-  const response = await responsePromise;
-
-  if (response === undefined) {
-    throw new Error(message);
-  }
-
-  return response;
 }

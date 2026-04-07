@@ -128,9 +128,24 @@ public class RateLimitService {
                 local refill_period_ms = tonumber(ARGV[2])
                 local now_ms = tonumber(ARGV[3])
 
-                local state = redis.call('HMGET', key, 'tokens', 'last_refill_ms')
-                local tokens = tonumber(state[1])
-                local last_refill_ms = tonumber(state[2])
+                local tokens = nil
+                local last_refill_ms = nil
+                local key_type = redis.call('TYPE', key)['ok']
+
+                if key_type == 'string' then
+                    local state = redis.call('GET', key)
+                    if state ~= false and state ~= nil then
+                        local separator_index = string.find(state, '|', 1, true)
+                        if separator_index ~= nil then
+                            tokens = tonumber(string.sub(state, 1, separator_index - 1))
+                            last_refill_ms = tonumber(string.sub(state, separator_index + 1))
+                        end
+                    end
+                elseif key_type == 'hash' then
+                    local state = redis.call('HMGET', key, 'tokens', 'last_refill_ms')
+                    tokens = tonumber(state[1])
+                    last_refill_ms = tonumber(state[2])
+                end
 
                 if tokens == nil then
                     tokens = capacity
@@ -156,13 +171,8 @@ public class RateLimitService {
                     retry_after_seconds = math.ceil(missing_tokens / refill_rate / 1000)
                 end
 
-                redis.call('HSET', key,
-                    'tokens', remaining_tokens,
-                    'last_refill_ms', now_ms
-                )
-
                 local ttl_ms = math.max(refill_period_ms, 1000)
-                redis.call('PEXPIRE', key, ttl_ms)
+                redis.call('SET', key, tostring(remaining_tokens) .. '|' .. tostring(now_ms), 'PX', ttl_ms)
 
                 return {allowed, math.floor(remaining_tokens), retry_after_seconds}
                 """);

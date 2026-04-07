@@ -121,4 +121,27 @@ describe("AnalyticsPage", () => {
       expect.any(String),
     );
   });
+
+  it("shows the chart empty state when analytics has no daily click points", async () => {
+    listShortUrls.mockResolvedValue({
+      content: [{ shortCode: "quiet-link" }],
+    });
+    getUrlAnalytics.mockResolvedValue({
+      shortCode: "quiet-link",
+      totalClicks: 12,
+      periodClicks: 4,
+      uniqueClicks: 3,
+      clicksByDate: [],
+    });
+
+    renderWithAppProviders(<AnalyticsPage />);
+
+    await waitFor(() => {
+      expect(getUrlAnalytics).toHaveBeenCalled();
+    });
+
+    expect(
+      screen.getByText(/no daily click data is available for the selected date range/i),
+    ).toBeInTheDocument();
+  });
 });
